@@ -724,17 +724,6 @@ int main(void) {
 	DEBUG_PRINT(UARTprintf("MonoCl: %d\n", MEASURE_TCL);)
 	DEBUG_PRINT(UARTprintf("Alkalinity: %d\n", MEASURE_ALKALINITY);)
 
-
-//	uint16_t test = 0;
-//
-//	for(test = 1; test <= 15; test++)
-//	{
-//		MemoryWrite(Find_Cal_page(test), OFFSET_CAL_NUMBER, 2, (uint8_t *) &test);
-////		MemoryWrite(Find_Test_page(test), OFFSET_TEST_NUMBER, 2, &test);
-//	}
-//	uint16_t clear = 0xFFFF;
-//	MemoryWrite(Find_Cal_page(16), OFFSET_CAL_NUMBER, 2, (uint8_t *) &clear);
-
 #ifdef TESTING_MODE
 
 //	float Conductivity_reading_low = (10.76 * 0.795) / 500000;	// Current adjust this reading so the factory calibration holds across Roam units
@@ -830,29 +819,6 @@ int main(void) {
 		DEBUG_PRINT(UARTprintf("Cond Mid I: %d\n", (int) (I_Mid * 1000));)
 		DEBUG_PRINT(UARTprintf("Cond High I: %d\n", (int) (I_High * 1000));)
 
-
-
-//		float Cond_Slope = (35.568/122382.6667 - 35.568/238013.333)/(2240 - 1015)*1000000;
-//		UARTprintf("Factory Conductivity Slope:\t%d\n", (int) (Cond_Slope * 1000));
-//		MemoryWrite(PAGE_FACTORY_CAL, OFFSET_FACTORY_COND_SLOPE, 4, (uint8_t *) &Cond_Slope);
-
-
-
-
-
-//		unsigned int BatCap = BatteryRead(REP_CAP_REG);
-//		DEBUG_PRINT(UARTprintf("Battery Capacity: %d mAh\n", BatCap);)
-//
-//		unsigned int BatAge = BatteryRead(AGE_REG);
-//		DEBUG_PRINT(UARTprintf("Battery Age: %d %%\n", BatAge);)
-//
-//		unsigned int BatCycles = BatteryRead(CYC_REG);
-//		DEBUG_PRINT(UARTprintf("Battery Cycles: %d cycles\n", BatCycles);)
-
-//		uint8_t *Sensor_Expiration;	// Pointer to data for expiration date, read from memory
-//		Sensor_Expiration = MemoryRead(PAGE_CARTRIDGE_INFO, OFFSET_SENSOR_EXPIRATION_DATE, 4); // Read expiration date from memory
-//		DEBUG_PRINT(UARTprintf("Expiration: %d/%d/%d%d\n", Sensor_Expiration[0], Sensor_Expiration[1], Sensor_Expiration[2], Sensor_Expiration[3]);)
-
 		// For the testing mode we are now allowing UART control for rerunning calibrations
 		uint32_t holder;
 		EEPROMRead(&holder, OFFSET_CAL_RERUN, 4);
@@ -868,233 +834,18 @@ int main(void) {
 	}
 #endif
 
-//	float Test[10];
-//	struct ISEConfig ISEs;
-//	FillISEStruct(&ISEs);
-//	while(GPIOPinRead(IO_BUTTON_BASE, IO_BUTTON_PIN) == IO_BUTTON_PIN)
-//	{
-//		CollectISEmV(Test, 0xFFFF, ISE_WAIT, PRINT_ISE_TIME_DATA, &ISEs);
-//	}
-
-//	uint16_t Clear = 0xFFFF;
-//	uint16_t Test = 1;
-//	for(Test = 37; Test < 39; Test++)
-//		MemoryWrite(PAGE_TEST + PAGES_FOR_TEST * (Test - 1), OFFSET_TEST_NUMBER, 2, (uint8_t *) &Test);
-////	for(Test = 20; Test < 101; Test++)
-////		MemoryWrite(PAGE_TEST + PAGES_FOR_TEST * (Test - 1), OFFSET_TEST_NUMBER, 2, (uint8_t *) &Clear);
-////		if(*MemoryRead(PAGE_TEST + PAGES_FOR_TEST * (Test - 1), OFFSET_TEST_DATE, 1) == 0xFF)
-////			MemoryWrite(PAGE_TEST + PAGES_FOR_TEST * (Test - 1), OFFSET_TEST_NUMBER, 2, (uint8_t *) &Clear);
-////		else
-////			MemoryWrite(PAGE_TEST + PAGES_FOR_TEST * (Test - 1), OFFSET_TEST_NUMBER, 2, (uint8_t *) &Test);
-//
-//	uint16_t Cal = 1;
-//	MemoryWrite(PAGE_CAL + PAGES_FOR_CAL * (Cal - 1), OFFSET_CAL_NUMBER, 2, (uint8_t *) &Cal);
-//	for(Cal = 31; Cal < 54; Cal++)
-//		MemoryWrite(PAGE_CAL + PAGES_FOR_CAL * (Cal - 1), OFFSET_CAL_NUMBER, 2, (uint8_t *) &Clear);
-////	for(Cal = 1; Cal < 32; Cal++)
-////		if(*MemoryRead(PAGE_CAL + PAGES_FOR_CAL * (Cal - 1), OFFSET_CAL_DATE, 1) == 0xFF)
-////			MemoryWrite(PAGE_CAL + PAGES_FOR_CAL * (Cal - 1), OFFSET_CAL_NUMBER, 2, (uint8_t *) &Clear);
-////		else
-////			MemoryWrite(PAGE_CAL + PAGES_FOR_CAL * (Cal - 1), OFFSET_CAL_NUMBER, 2, (uint8_t *) &Cal);
-
-//	uint8_t k;
-//	for(k = 42; k < 56; k++)
-//	{
-//		uint16_t Test_page = ((PAGE_TEST + k * PAGES_FOR_TEST) - PAGES_FOR_TEST);
-//
-//		uint8_t Test_Cal_Number = 39;
-//		MemoryWrite(Test_page, OFFSET_TEST_CAL, 1, &Test_Cal_Number);
-//		uint16_t Cal_page = Find_Cal_page(Test_Cal_Number);
-//
-//		uint8_t Last_cal_passed[10] = {39, 39, 39, 39, 39, 39, 39, 39, 39, 39};
-//		MemoryWrite(Cal_page, OFFSET_PH_1_LAST_P_CAL, 10, Last_cal_passed);
-//	}
-
-
-
-
-//	// Initialize floats to hold pump variables
-//	float PumpVolRev = 19.257;
-//	float PumpRatio = .635;
-//
-//	// Read from Tiva EEPROM the pump specs
-//	EEPROMProgram((uint32_t *) &PumpVolRev, OFFSET_PUMP_VOL_PER_REV, 4);
-//	EEPROMProgram((uint32_t *) &PumpRatio, OFFSET_PUMP_DEAD_SPOT, 4);
-
 	ConnectMemory(1);
-
-//	MeasureTemperature(1);
-//	uint8_t Cartridge_Serial_Number[7] = "0000000";
-//	MemoryWrite(PAGE_CARTRIDGE_INFO, OFFSET_CARTRIDGE_SN, 7, (uint8_t *) &Cartridge_Serial_Number);
-//	PrintErrors(gui32Error, 1, 0);
-
-	//	float Conductivity_reading_low = 590032.064;
-	//	MemoryWrite(PAGE_FACTORY_CAL, OFFSET_COND_READ_LOW_POINT, 4, (uint8_t *) &Conductivity_reading_low);
-
-	//	uint32_t Fill = 0xFFFFFFFF;
-//		MemoryWrite(PAGE_CARTRIDGE_INFO, OFFSET_MIN_CART_TEMP, 4, (uint8_t *) &Fill);
-	//	MemoryWrite(PAGE_CARTRIDGE_INFO, OFFSET_MIN_TEMP_DATE, 4, (uint8_t *) &Fill);
-	//	MemoryWrite(PAGE_CARTRIDGE_INFO, OFFSET_MIN_TEMP_TIME, 2, (uint8_t *) &Fill);
-	//
-	//	MemoryWrite(PAGE_CARTRIDGE_INFO, OFFSET_MAX_CART_TEMP, 4, (uint8_t *) &Fill);
-	//	MemoryWrite(PAGE_CARTRIDGE_INFO, OFFSET_MAX_TEMP_DATE, 4, (uint8_t *) &Fill);
-	//	MemoryWrite(PAGE_CARTRIDGE_INFO, OFFSET_MAX_TEMP_TIME, 2, (uint8_t *) &Fill);
-
-
-//	DEBUG_PRINT(UARTprintf("=%d/1000\t", (int) (Build_float(MemoryRead(PAGE_CAL, OFFSET_MG_1_LOG_K, 4)) * 1000));)
-//	DEBUG_PRINT(UARTprintf("=%d/1000\t", (int) (Build_float(MemoryRead(PAGE_CAL, OFFSET_MG_2_LOG_K, 4)) * 1000));)
-
-//	float minT = 25;
-//	MemoryWrite(PAGE_CARTRIDGE_INFO, OFFSET_MIN_CART_TEMP, 4, (uint8_t *) &minT);
-//	float Min_Temp = Build_float(MemoryRead(PAGE_CARTRIDGE_INFO, OFFSET_MIN_CART_TEMP, 4));
-//	DEBUG_PRINT(UARTprintf("%d\n", (int) Min_Temp);)
-//
-//	MeasureTemperature(1);
-
-	//	float T_Therm = ReadThermistor();
-	//	DEBUG_PRINT(UARTprintf("Temp: %d C*1000\n", (int) (T_Therm * 1000));)
-
-	//	gui32Error = 0;
-	//
-	//	ConnectMemory(1);
-	//
-	//	unsigned char Manufacturer_Name[20] = "e-sens              ";
-	//
-	//	MemoryWrite(PAGE_DEVICE_INFO, 127, 2, Manufacturer_Name);
-	//	unsigned char Mem_Rx = *(MemoryRead(PAGE_DEVICE_INFO, 0, 1));
-	//
-	//	if(Mem_Rx == Manufacturer_Name[0])
-	//	{
-	//		DEBUG_PRINT(UARTprintf("Memory Verified to be working... I2C bus working \n");)
-	//	}
-	//	else
-	//		DEBUG_PRINT(UARTprintf("Memory Testing failed \n \n");)
-	//	PrintErrors(gui32Error, 1, 0);
-
-	//	uint8_t * pui8MemRx = MemoryRead(PAGE_CARTRIDGE_INFO, 14, 41);
-	//	MemoryWrite(PAGE_CARTRIDGE_INFO, 20, 41, pui8MemRx);
-	//
-	//	uint8_t SensorMaxDays = 30;
-	//	MemoryWrite(PAGE_CARTRIDGE_INFO, 14, 1, &SensorMaxDays);
 
 	uint8_t *pui8SysStatus;	// Pointer used to access data transferred from BT chip using RequestSystemStatus() function
 	uint8_t Cal_Rerun = 0;	// Flag to hold if the calibration is being re-ran, defined outside of the switch/case statement to hold value when restarting cal
-	//	userDelay(2000, 1);
-	//	pui8SysStatus = RequestSystemStatus();
-	//	DEBUG_PRINT(UARTprintf("Date and Time: %d/%d/%d%d, %d:%d:%d\n", *pui8SysStatus, *(pui8SysStatus + 1), *(pui8SysStatus + 2), *(pui8SysStatus + 3), *(pui8SysStatus + 4), *(pui8SysStatus + 5), *(pui8SysStatus + 6));)
 
 	PrintTime();
-
-//	DEBUG_PRINT(UARTprintf("Lets put in a logt of caharacters and see if that increases the size... I feel like it should but wht d oi ndow\n");)
 
 #ifdef LIFETIME_TESTING
 	UARTprintf("Pouch Testing Code! Press button to start running!\n");
 	while(GPIOPinRead(GPIO_PORTF_BASE, GPIO_PIN_3) == GPIO_PIN_3 && g_state == STATE_IDLE);
 	while(GPIOPinRead(GPIO_PORTF_BASE, GPIO_PIN_3) == 0  && g_state == STATE_IDLE);
 #endif
-
-
-
-//	// TODO: Read conductivity here as the mid point
-//	// Measure conductivity
-//	// Set RE and CE floating and close RE/CE loop for conductivity
-//	IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWA, 1);
-//	IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWB, 0);
-//
-//	ConnectMemory(0);
-//
-//	// Set mid current range
-//	// 20 uApp R = 430k
-//	IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 1);
-//	IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 1);
-//
-//	uint8_t Check = 0, attempt = 0;
-//	while(Check != 1)
-//	{
-//		WaveGenSet(1);
-//
-//		Check = CheckCond();
-//		if(attempt == 5)
-//		{
-//			gui32Error |= WAVE_GEN_FAIL;
-//			break;
-//		}
-//
-//		if(Check != 1)
-//		{
-//			InitWaveGen(1);
-//			attempt++;
-//		}
-//	}
-//
-//
-//	float CalConductivityV2Mid = ConductivityMovingAvg();
-//
-//	WaveGenSet(0);	// Turn off waveform generator when switching ranges
-//
-//	ConnectMemory(1);
-//
-//
-//	// Current correct values before displaying
-//	float I_Mid;
-//
-//	// Read the currents off the memory, these should be saved during the QC process
-//	EEPROMRead((uint32_t *) &I_Mid, OFFSET_COND_I_MID, 4);
-//
-//	if(I_Mid != I_Mid)
-//		I_Mid = 19.89 * 0.8;	// Average from circuits before ARV1_0B
-//
-//	float Clean_Cond_Mid_Raw = (1000000 * I_Mid) / CalConductivityV2Mid;
-//	DEBUG_PRINT(UARTprintf("Before: %d\n", (int) Clean_Cond_Mid_Raw);)
-//
-//
-//
-//	CleanCond();
-//
-//
-//
-//	// TODO: Read conductivity here as the mid point
-//	// Measure conductivity
-//	// Set RE and CE floating and close RE/CE loop for conductivity
-//	IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWA, 1);
-//	IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWB, 0);
-//
-//	ConnectMemory(0);
-//
-//	// Set mid current range
-//	// 20 uApp R = 430k
-//	IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 1);
-//	IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 1);
-//
-//	Check = 0;
-//	attempt = 0;
-//	while(Check != 1)
-//	{
-//		WaveGenSet(1);
-//
-//		Check = CheckCond();
-//		if(attempt == 5)
-//		{
-//			gui32Error |= WAVE_GEN_FAIL;
-//			break;
-//		}
-//
-//		if(Check != 1)
-//		{
-//			InitWaveGen(1);
-//			attempt++;
-//		}
-//	}
-//
-//	CalConductivityV2Mid = ConductivityMovingAvg();
-//
-//	WaveGenSet(0);	// Turn off waveform generator when switching ranges
-//
-//	ConnectMemory(1);
-//
-//	Clean_Cond_Mid_Raw = (1000000 * I_Mid) / CalConductivityV2Mid;
-//	DEBUG_PRINT(UARTprintf("After: %d\n", (int) Clean_Cond_Mid_Raw);)
-
 
 	while(1){
 
