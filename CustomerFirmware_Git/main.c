@@ -876,26 +876,26 @@ int main(void) {
 //		CollectISEmV(Test, 0xFFFF, ISE_WAIT, PRINT_ISE_TIME_DATA, &ISEs);
 //	}
 
-	uint16_t Clear = 0xFFFF;
-	uint16_t Test = 1;
-	for(Test = 37; Test < 39; Test++)
-		MemoryWrite(PAGE_TEST + PAGES_FOR_TEST * (Test - 1), OFFSET_TEST_NUMBER, 2, (uint8_t *) &Test);
-//	for(Test = 20; Test < 101; Test++)
-//		MemoryWrite(PAGE_TEST + PAGES_FOR_TEST * (Test - 1), OFFSET_TEST_NUMBER, 2, (uint8_t *) &Clear);
-//		if(*MemoryRead(PAGE_TEST + PAGES_FOR_TEST * (Test - 1), OFFSET_TEST_DATE, 1) == 0xFF)
-//			MemoryWrite(PAGE_TEST + PAGES_FOR_TEST * (Test - 1), OFFSET_TEST_NUMBER, 2, (uint8_t *) &Clear);
-//		else
-//			MemoryWrite(PAGE_TEST + PAGES_FOR_TEST * (Test - 1), OFFSET_TEST_NUMBER, 2, (uint8_t *) &Test);
-
-	uint16_t Cal = 1;
-	MemoryWrite(PAGE_CAL + PAGES_FOR_CAL * (Cal - 1), OFFSET_CAL_NUMBER, 2, (uint8_t *) &Cal);
-	for(Cal = 31; Cal < 54; Cal++)
-		MemoryWrite(PAGE_CAL + PAGES_FOR_CAL * (Cal - 1), OFFSET_CAL_NUMBER, 2, (uint8_t *) &Clear);
-//	for(Cal = 1; Cal < 32; Cal++)
-//		if(*MemoryRead(PAGE_CAL + PAGES_FOR_CAL * (Cal - 1), OFFSET_CAL_DATE, 1) == 0xFF)
-//			MemoryWrite(PAGE_CAL + PAGES_FOR_CAL * (Cal - 1), OFFSET_CAL_NUMBER, 2, (uint8_t *) &Clear);
-//		else
-//			MemoryWrite(PAGE_CAL + PAGES_FOR_CAL * (Cal - 1), OFFSET_CAL_NUMBER, 2, (uint8_t *) &Cal);
+//	uint16_t Clear = 0xFFFF;
+//	uint16_t Test = 1;
+//	for(Test = 37; Test < 39; Test++)
+//		MemoryWrite(PAGE_TEST + PAGES_FOR_TEST * (Test - 1), OFFSET_TEST_NUMBER, 2, (uint8_t *) &Test);
+////	for(Test = 20; Test < 101; Test++)
+////		MemoryWrite(PAGE_TEST + PAGES_FOR_TEST * (Test - 1), OFFSET_TEST_NUMBER, 2, (uint8_t *) &Clear);
+////		if(*MemoryRead(PAGE_TEST + PAGES_FOR_TEST * (Test - 1), OFFSET_TEST_DATE, 1) == 0xFF)
+////			MemoryWrite(PAGE_TEST + PAGES_FOR_TEST * (Test - 1), OFFSET_TEST_NUMBER, 2, (uint8_t *) &Clear);
+////		else
+////			MemoryWrite(PAGE_TEST + PAGES_FOR_TEST * (Test - 1), OFFSET_TEST_NUMBER, 2, (uint8_t *) &Test);
+//
+//	uint16_t Cal = 1;
+//	MemoryWrite(PAGE_CAL + PAGES_FOR_CAL * (Cal - 1), OFFSET_CAL_NUMBER, 2, (uint8_t *) &Cal);
+//	for(Cal = 31; Cal < 54; Cal++)
+//		MemoryWrite(PAGE_CAL + PAGES_FOR_CAL * (Cal - 1), OFFSET_CAL_NUMBER, 2, (uint8_t *) &Clear);
+////	for(Cal = 1; Cal < 32; Cal++)
+////		if(*MemoryRead(PAGE_CAL + PAGES_FOR_CAL * (Cal - 1), OFFSET_CAL_DATE, 1) == 0xFF)
+////			MemoryWrite(PAGE_CAL + PAGES_FOR_CAL * (Cal - 1), OFFSET_CAL_NUMBER, 2, (uint8_t *) &Clear);
+////		else
+////			MemoryWrite(PAGE_CAL + PAGES_FOR_CAL * (Cal - 1), OFFSET_CAL_NUMBER, 2, (uint8_t *) &Cal);
 
 //	uint8_t k;
 //	for(k = 42; k < 56; k++)
