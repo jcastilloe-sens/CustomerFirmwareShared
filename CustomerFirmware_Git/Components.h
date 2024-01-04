@@ -16,7 +16,7 @@
 //
 //*****************************************************************************
 //#define COND_FREQ	1000
-#define COND_FREQ	1000
+#define COND_FREQ	5000
 
 //// This is the normal configuration
 //// Defines for which sensor is on ADC channels
