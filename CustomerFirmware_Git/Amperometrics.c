@@ -1407,468 +1407,472 @@ float * CurrentTimeRead_CurrentLimited(uint8_t ui8Channel, int ADC_CS_PIN, float
 //**************************************************************************
 void CleanAmperometrics(int8_t Ref_drift, uint16_t Cal_Number, uint16_t Test_Number, uint8_t Oxide_Rebuild)
 {
+	if((gui32Error & ABORT_ERRORS) == 0)
+	{
 #ifndef MEMORY_V5
-	uint16_t page;
-	if(Cal_Number != 0)
-		page = Find_Cal_page(Cal_Number);
-	if(Test_Number != 0)
-		page = Find_Test_page(Test_Number);
+		uint16_t page;
+		if(Cal_Number != 0)
+			page = Find_Cal_page(Cal_Number);
+		if(Test_Number != 0)
+			page = Find_Test_page(Test_Number);
 #endif
 
-	int16_t Positive_Step = 1000;
-	int16_t Negative_Step = -700;
-	float Clean_pH = Build_float(MemoryRead(PAGE_SOLUTIONS, OFFSET_CLEAN_PH, 4));
-	if(Clean_pH < 7)
-	{
-		Negative_Step = -650;
-		DEBUG_PRINT(UARTprintf("pH 6 Clean, adjusting cleaning voltage!\n");)
-	}
-	else if(Clean_pH > 8.5)
-	{
-		Positive_Step = 1000;
-		Negative_Step = -800;
-		DEBUG_PRINT(UARTprintf("pH 9 Clean, adjusting cleaning voltage!\n");)
-	}
+		int16_t Positive_Step = 1000;
+		int16_t Negative_Step = -700;
+		float Clean_pH = Build_float(MemoryRead(PAGE_SOLUTIONS, OFFSET_CLEAN_PH, 4));
+		if(Clean_pH < 7)
+		{
+			Negative_Step = -650;
+			DEBUG_PRINT(UARTprintf("pH 6 Clean, adjusting cleaning voltage!\n");)
+		}
+		else if(Clean_pH > 8.5)
+		{
+			Positive_Step = 1000;
+			Negative_Step = -800;
+			DEBUG_PRINT(UARTprintf("pH 9 Clean, adjusting cleaning voltage!\n");)
+		}
 
 
-	uint8_t step;
-	float * fI_WE; 	// Starting and Ending Current flowing through WEs, nA
-//	int16_t i16Potential_Step[7] = {1300, -500, 1300, -500, 1300, -500, 1300}; // mV	// Bicarbonate rinse cleaning numbers
-//	int16_t i16Potential_Step[7] = {1100, -800, 1100, -800, 1100, -800, 1100}; // mV	// 11/14/2019 HEPES rinse
-//	int16_t i16Potential_Step[7] = {800, -700, 800, -700, 800, -700, 800}; // mV	// Changed 10/9/2019 HEPES rinse
-//	int16_t i16Potential_Step[7] = {1200, -250, 1200, -250, 1200, -250, 1200}; // mV	// Nitric Acid
-//	int16_t i16Potential_Step[7] = {1000, -250, 1000, -250, 1000, -250, 1000}; // mV	// T1
-	int16_t i16Potential_Step[7] = {Positive_Step - Ref_drift, Negative_Step - Ref_drift, Positive_Step - Ref_drift, Negative_Step - Ref_drift, Positive_Step - Ref_drift, Negative_Step - Ref_drift, Positive_Step - Ref_drift}; // mV	// 2/13/2020 Cleaning solution
-//	int16_t i16V_cathodic_clean = -300; // mV	// Bicarbonate rinse cleaning numbers
-//	int16_t i16V_cathodic_clean = -600; // mV	// 11/14/2019 HEPES rinse
-//	int16_t i16V_cathodic_clean = -700; // mV	// Changed 10/9/2019 HEPES rinse
-//	int16_t i16V_cathodic_clean = -250; // mV	// Nitric Acid
-//	int16_t i16V_cathodic_clean = -250; // mV	// T1
-	int16_t i16V_cathodic_clean = Negative_Step - Ref_drift; // mV	// 2/13/2020 Cleaning solution
+		uint8_t step;
+		float * fI_WE; 	// Starting and Ending Current flowing through WEs, nA
+		//	int16_t i16Potential_Step[7] = {1300, -500, 1300, -500, 1300, -500, 1300}; // mV	// Bicarbonate rinse cleaning numbers
+		//	int16_t i16Potential_Step[7] = {1100, -800, 1100, -800, 1100, -800, 1100}; // mV	// 11/14/2019 HEPES rinse
+		//	int16_t i16Potential_Step[7] = {800, -700, 800, -700, 800, -700, 800}; // mV	// Changed 10/9/2019 HEPES rinse
+		//	int16_t i16Potential_Step[7] = {1200, -250, 1200, -250, 1200, -250, 1200}; // mV	// Nitric Acid
+		//	int16_t i16Potential_Step[7] = {1000, -250, 1000, -250, 1000, -250, 1000}; // mV	// T1
+		int16_t i16Potential_Step[7] = {Positive_Step - Ref_drift, Negative_Step - Ref_drift, Positive_Step - Ref_drift, Negative_Step - Ref_drift, Positive_Step - Ref_drift, Negative_Step - Ref_drift, Positive_Step - Ref_drift}; // mV	// 2/13/2020 Cleaning solution
+		//	int16_t i16V_cathodic_clean = -300; // mV	// Bicarbonate rinse cleaning numbers
+		//	int16_t i16V_cathodic_clean = -600; // mV	// 11/14/2019 HEPES rinse
+		//	int16_t i16V_cathodic_clean = -700; // mV	// Changed 10/9/2019 HEPES rinse
+		//	int16_t i16V_cathodic_clean = -250; // mV	// Nitric Acid
+		//	int16_t i16V_cathodic_clean = -250; // mV	// T1
+		int16_t i16V_cathodic_clean = Negative_Step - Ref_drift; // mV	// 2/13/2020 Cleaning solution
 
-	float fI_drive = 0.7;	// uA to drive through each electrode when rebuilding oxide
-	if(gABoard >= AV6_4)
-//		fI_drive = 2.25;
-		fI_drive = 3.0;
-//		fI_drive = 1.0;	// Changed 10/9/2019
+		float fI_drive = 0.7;	// uA to drive through each electrode when rebuilding oxide
+		if(gABoard >= AV6_4)
+			//		fI_drive = 2.25;
+			fI_drive = 3.0;
+		//		fI_drive = 1.0;	// Changed 10/9/2019
 
-	float Rebuild_time = 10;	// # of seconds to drive current when rebuilding oxide
+		float Rebuild_time = 10;	// # of seconds to drive current when rebuilding oxide
 
-	DEBUG_PRINT(UARTprintf("Cleaning Amperometrics using steps and oxide rebuild... \n");)
+		DEBUG_PRINT(UARTprintf("Cleaning Amperometrics using steps and oxide rebuild... \n");)
 
-	int i;
+		int i;
 
-	// Set RE + CE to amperometric loop
-	IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWA, 1);
-	IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWB, 1);
+		// Set RE + CE to amperometric loop
+		IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWA, 1);
+		IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWB, 1);
 
-	// Connect all electrodes together for potential steps
-	IO_Ext_Set(IO_EXT1_ADDR, 3, WORK_EL_SWB, 1);
-	IO_Ext_Set(IO_EXT1_ADDR, 3, WORK_EL_SWA, 1);
-	IO_Ext_Set(IO_EXT2_ADDR, 3, WORK_EL_HIGH_CURRENT, 1);
-	if(gABoard >= AV7_3)
-		IO_Ext_Set(IO_EXT2_ADDR, 2, WORK_EL_SHORT, 1);
+		// Connect all electrodes together for potential steps
+		IO_Ext_Set(IO_EXT1_ADDR, 3, WORK_EL_SWB, 1);
+		IO_Ext_Set(IO_EXT1_ADDR, 3, WORK_EL_SWA, 1);
+		IO_Ext_Set(IO_EXT2_ADDR, 3, WORK_EL_HIGH_CURRENT, 1);
+		if(gABoard >= AV7_3)
+			IO_Ext_Set(IO_EXT2_ADDR, 2, WORK_EL_SHORT, 1);
 
-//	// Connect metals electrodes for potential steps
-//	IO_Ext_Set(IO_EXT2_ADDR, 3, METALS_WE_SWB, 1);
-//	IO_Ext_Set(IO_EXT2_ADDR, 3, METALS_WE_SWA, 1);
-//	IO_Ext_Set(IO_EXT2_ADDR, 3, METALS_SW_EN, 1);
+		//	// Connect metals electrodes for potential steps
+		//	IO_Ext_Set(IO_EXT2_ADDR, 3, METALS_WE_SWB, 1);
+		//	IO_Ext_Set(IO_EXT2_ADDR, 3, METALS_WE_SWA, 1);
+		//	IO_Ext_Set(IO_EXT2_ADDR, 3, METALS_SW_EN, 1);
 
-	// Set ORP switches to voltage setting and current reading position
-	IO_Ext_Set(IO_EXT2_ADDR, 2, ORP_SW_A0, 1);
-	IO_Ext_Set(IO_EXT2_ADDR, 2, ORP_SW_A1, 1);
+		// Set ORP switches to voltage setting and current reading position
+		IO_Ext_Set(IO_EXT2_ADDR, 2, ORP_SW_A0, 1);
+		IO_Ext_Set(IO_EXT2_ADDR, 2, ORP_SW_A1, 1);
 
-	//
-	// Potential Steps
-	//
-	DACVoltageSet(0, i16Potential_Step[0], false);	// WEs
-	DACVoltageSet(5, i16Potential_Step[0], true);	// ORP
-	DEBUG_PRINT(UARTprintf("Potential step %d... \n", 1);)
-
-	if(gABoard >= AV7_3)
-	{
-#ifndef MIX_WHILE_CLEANING
-		userDelay(5000, 0);
-#ifdef PUMP_CLEAN
-		PumpStepperRunStepSpeed_AbortReady(FW, 1000, 6000);
-#endif
-#else
-		g_TimerInterruptFlag = 0;
-		TimerLoadSet(TIMER0_BASE, TIMER_A, SysCtlClockGet() * 5); // Set periodic timer
-		TimerEnable(TIMER0_BASE, TIMER_A);
-		// Assuming we are 250 steps ahead of 0 when we enter cleaning, rather move it forward than backwards to keep arrays and reference connected
-		PumpStepperRunStepSpeed_AbortReady(FW, 300, 3000);
-
-		while(g_TimerInterruptFlag == 0)
-			PumpStepperMix(BW, 600, 3000, 1);
-#endif
-	}
-	else
-	{
-		fI_WE = CurrentTimeRead(0, ADC4_CS_B, 5, i16Potential_Step[0], 1, .1);	// nA
-		DEBUG_PRINT(UARTprintf("Current started and ended at:\t%d\t%d\tnA\n", (int) fI_WE[0], (int) fI_WE[1]);)
-	}
-
-
-	// Skip first step, cleaning solutions first step is around 0, sometimes positive sometimes negative
-//	if(fI_WE < 0)
-//	{
-//		UARTprintf("Current should be positive!\n");
-//		gui32Error |= CL_CLEANING_OUT_OF_RANGE;
-//		update_Error();
-//	}
-
-	for(step = 1; step < 7; step++)
-	{
-		DACVoltageSet(0, i16Potential_Step[step], false);	// WEs
-		DACVoltageSet(5, i16Potential_Step[step], true);	// ORP
-		DEBUG_PRINT(UARTprintf("Potential step %d... \n", (step + 1));)
+		//
+		// Potential Steps
+		//
+		DACVoltageSet(0, i16Potential_Step[0], false);	// WEs
+		DACVoltageSet(5, i16Potential_Step[0], true);	// ORP
+		DEBUG_PRINT(UARTprintf("Potential step %d... \n", 1);)
 
 		if(gABoard >= AV7_3)
 		{
 #ifndef MIX_WHILE_CLEANING
-#ifndef ANODIC_CLEANING
-			userDelay(3000, 0);
-#else
-			if(step == 6)
-			{
-				IO_Ext_Set(IO_EXT2_ADDR, 2, WORK_EL_SHORT, 0);
-				fI_WE = CurrentTimeRead(0, ADC4_CS_B, 3, i16Potential_Step[step], 1, .1);	// nA
-				DEBUG_PRINT(UARTprintf("Anodic current started and ended at:\t%d\t%d\tnA\n", (int) fI_WE[0], (int) fI_WE[1]);)
-			}
-			else
-				userDelay(3000, 0);
+			userDelay(5000, 0);
+#ifdef PUMP_CLEAN
+			PumpStepperRunStepSpeed_AbortReady(FW, 1000, 6000);
 #endif
 #else
 			g_TimerInterruptFlag = 0;
-			TimerLoadSet(TIMER0_BASE, TIMER_A, SysCtlClockGet() * 3); // Set periodic timer
+			TimerLoadSet(TIMER0_BASE, TIMER_A, SysCtlClockGet() * 5); // Set periodic timer
 			TimerEnable(TIMER0_BASE, TIMER_A);
+			// Assuming we are 250 steps ahead of 0 when we enter cleaning, rather move it forward than backwards to keep arrays and reference connected
+			PumpStepperRunStepSpeed_AbortReady(FW, 300, 3000);
 
 			while(g_TimerInterruptFlag == 0)
 				PumpStepperMix(BW, 600, 3000, 1);
-			g_TimerInterruptFlag = 0;
-#endif
-
-			// Only break out of this function after a negative step
-			if(step % 2 != 0)
-				if((gui32Error & ABORT_ERRORS) != 0)
-					break;
-
-#ifdef PUMP_CLEAN
-		PumpStepperRunStepSpeed_AbortReady(FW, 1000, 6000);
 #endif
 		}
 		else
 		{
-			fI_WE = CurrentTimeRead(0, ADC4_CS_B, 3, i16Potential_Step[step], 1, .1);	// nA
+			fI_WE = CurrentTimeRead(0, ADC4_CS_B, 5, i16Potential_Step[0], 1, .1);	// nA
 			DEBUG_PRINT(UARTprintf("Current started and ended at:\t%d\t%d\tnA\n", (int) fI_WE[0], (int) fI_WE[1]);)
-
-			if((step % 2) == 0)	// Positive step
-			{
-				if(fI_WE[1] < -500)
-				{
-					DEBUG_PRINT(UARTprintf("Current should be positive!\n");)
-					gui32Error |= CL_CLEANING_OUT_OF_RANGE;
-					update_Error();
-				}
-			}
-			else	// Negative step
-			{
-				if(fI_WE[1] > 0)
-				{
-					DEBUG_PRINT(UARTprintf("Current should be negative!\n");)
-					gui32Error |= CL_CLEANING_OUT_OF_RANGE;
-					update_Error();
-				}
-
-				if((gui32Error & ABORT_ERRORS) != 0)
-					break;
-			}
 		}
-	}
-
-	//
-	// Cathodic Cleaning
-	//
-	if((gui32Error & ABORT_ERRORS) == 0)
-	{
-		DACVoltageSet(0, i16V_cathodic_clean, false);	// WEs
-		DACVoltageSet(5, i16V_cathodic_clean, true);	// ORP
-
-		DEBUG_PRINT(UARTprintf("Cathodic Cleaning: \n");)
-//		if(gABoard >= AV7_3)
-//		{
-//			userDelay(40000, 1);
-//			IO_Ext_Set(IO_EXT2_ADDR, 2, WORK_EL_SHORT, 0);
-//			userDelay(2000, 1);
-//			fI_WE = CurrentTimeRead(0, ADC4_CS_B, 3, i16V_cathodic_clean, 1, .1);
-//		}
-//		else
-//		{
-//			fI_WE = CurrentTimeRead(0, ADC4_CS_B, 45, i16V_cathodic_clean, 1, .1);
-//		}
-
-		IO_Ext_Set(IO_EXT2_ADDR, 2, WORK_EL_SHORT, 0);
-		fI_WE = CurrentTimeRead(0, ADC4_CS_B, 90, i16V_cathodic_clean, 1, 1);
 
 
-		DEBUG_PRINT(UARTprintf("Current started and ended at:\t%d\t%d\tnA\n", (int) fI_WE[0], (int) fI_WE[1]);)
-		if(fI_WE[1] < -7000 || fI_WE[1] > 0)
+		// Skip first step, cleaning solutions first step is around 0, sometimes positive sometimes negative
+		//	if(fI_WE < 0)
+		//	{
+		//		UARTprintf("Current should be positive!\n");
+		//		gui32Error |= CL_CLEANING_OUT_OF_RANGE;
+		//		update_Error();
+		//	}
+
+		for(step = 1; step < 7; step++)
 		{
-			DEBUG_PRINT(UARTprintf("Current should be between -7000 and 0 nA!\n");)
-			gui32Error |= CL_CLEANING_OUT_OF_RANGE;
-			update_Error();
-		}
-	}
+			DACVoltageSet(0, i16Potential_Step[step], false);	// WEs
+			DACVoltageSet(5, i16Potential_Step[step], true);	// ORP
+			DEBUG_PRINT(UARTprintf("Potential step %d... \n", (step + 1));)
 
-	// Turn off cathodic cleaning voltages
-	DACVoltageSet(0, 0, false);	// WEs
-	DACVoltageSet(5, 0, true);	// ORP
-	IO_Ext_Set(IO_EXT2_ADDR, 3, WORK_EL_HIGH_CURRENT, 0);
-
-	// Disconnect ORP sensor from driving circuitry
-	IO_Ext_Set(IO_EXT2_ADDR, 2, ORP_SW_A0, 0);
-	IO_Ext_Set(IO_EXT2_ADDR, 2, ORP_SW_A1, 0);
-
-#ifndef MEMORY_V5
-	// Write 8 bytes to save both the starting and final currents
-	MemoryWrite(page, OFFSET_CLEAN_CATH_START, 8, (uint8_t *) fI_WE);
-#endif
-
-	//
-	// Anodic Oxide Rebuild
-	//
-	float WEVoltages[5];
-#ifndef MEMORY_V5
-	int16_t Start_V[5];
-#endif
-
-	if(Oxide_Rebuild > 0)
-	{
-		if((gui32Error & ABORT_ERRORS) == 0 && Oxide_Rebuild == 1)
-		{
-			DEBUG_PRINT(
-			UARTprintf("Rebuilding Oxide for %d seconds... \n", (int) Rebuild_time);
-			UARTprintf("Current at %d nA... \n", (int) (fI_drive * 1000));
-			)
-
-			// Connect all electrodes separately to drive current through each
-			IO_Ext_Set(IO_EXT1_ADDR, 3, WORK_EL_SWA, 0);
-			IO_Ext_Set(IO_EXT1_ADDR, 3, WORK_EL_SWB, 1);
-
-			float Voltage;
-			EEPROMRead((uint32_t *) &Voltage, OFFSET_AMP_I_VSET, 4);
-			if(Voltage == Voltage && Voltage <= 3000 && Voltage >= 0)
+			if(gABoard >= AV7_3)
 			{
-
-				if(fI_drive != 3)
+#ifndef MIX_WHILE_CLEANING
+#ifndef ANODIC_CLEANING
+				userDelay(3000, 0);
+#else
+				if(step == 6)
 				{
-					Voltage = 3000 - fI_drive / 3.0 * (3000 - Voltage);
-					DEBUG_PRINT(UARTprintf("Vset pulled from EEPROM, calculated %d uV!\n", (int) (Voltage * 1000));)
+					IO_Ext_Set(IO_EXT2_ADDR, 2, WORK_EL_SHORT, 0);
+					fI_WE = CurrentTimeRead(0, ADC4_CS_B, 3, i16Potential_Step[step], 1, .1);	// nA
+					DEBUG_PRINT(UARTprintf("Anodic current started and ended at:\t%d\t%d\tnA\n", (int) fI_WE[0], (int) fI_WE[1]);)
 				}
 				else
+					userDelay(3000, 0);
+#endif
+#else
+				g_TimerInterruptFlag = 0;
+				TimerLoadSet(TIMER0_BASE, TIMER_A, SysCtlClockGet() * 3); // Set periodic timer
+				TimerEnable(TIMER0_BASE, TIMER_A);
+
+				while(g_TimerInterruptFlag == 0)
+					PumpStepperMix(BW, 600, 3000, 1);
+				g_TimerInterruptFlag = 0;
+#endif
+
+				// Only break out of this function after a negative step
+				if(step % 2 != 0)
+					if((gui32Error & ABORT_ERRORS) != 0)
+						break;
+
+#ifdef PUMP_CLEAN
+				PumpStepperRunStepSpeed_AbortReady(FW, 1000, 6000);
+#endif
+			}
+			else
+			{
+				fI_WE = CurrentTimeRead(0, ADC4_CS_B, 3, i16Potential_Step[step], 1, .1);	// nA
+				DEBUG_PRINT(UARTprintf("Current started and ended at:\t%d\t%d\tnA\n", (int) fI_WE[0], (int) fI_WE[1]);)
+
+				if((step % 2) == 0)	// Positive step
+				{
+					if(fI_WE[1] < -500)
+					{
+						DEBUG_PRINT(UARTprintf("Current should be positive!\n");)
+							gui32Error |= CL_CLEANING_OUT_OF_RANGE;
+						update_Error();
+					}
+				}
+				else	// Negative step
+				{
+					if(fI_WE[1] > 0)
+					{
+						DEBUG_PRINT(UARTprintf("Current should be negative!\n");)
+							gui32Error |= CL_CLEANING_OUT_OF_RANGE;
+						update_Error();
+					}
+
+					if((gui32Error & ABORT_ERRORS) != 0)
+						break;
+				}
+			}
+		}
+
+		//
+		// Cathodic Cleaning
+		//
+		if((gui32Error & ABORT_ERRORS) == 0)
+		{
+			DACVoltageSet(0, i16V_cathodic_clean, false);	// WEs
+			DACVoltageSet(5, i16V_cathodic_clean, true);	// ORP
+
+			DEBUG_PRINT(UARTprintf("Cathodic Cleaning: \n");)
+			//		if(gABoard >= AV7_3)
+			//		{
+			//			userDelay(40000, 1);
+			//			IO_Ext_Set(IO_EXT2_ADDR, 2, WORK_EL_SHORT, 0);
+			//			userDelay(2000, 1);
+			//			fI_WE = CurrentTimeRead(0, ADC4_CS_B, 3, i16V_cathodic_clean, 1, .1);
+			//		}
+			//		else
+			//		{
+			//			fI_WE = CurrentTimeRead(0, ADC4_CS_B, 45, i16V_cathodic_clean, 1, .1);
+			//		}
+
+			IO_Ext_Set(IO_EXT2_ADDR, 2, WORK_EL_SHORT, 0);
+			fI_WE = CurrentTimeRead(0, ADC4_CS_B, 90, i16V_cathodic_clean, 1, 1);
+
+
+			DEBUG_PRINT(UARTprintf("Current started and ended at:\t%d\t%d\tnA\n", (int) fI_WE[0], (int) fI_WE[1]);)
+			if(fI_WE[1] < -7000 || fI_WE[1] > 0)
+			{
+				DEBUG_PRINT(UARTprintf("Current should be between -7000 and 0 nA!\n");)
+					gui32Error |= CL_CLEANING_OUT_OF_RANGE;
+				update_Error();
+			}
+		}
+
+		// Turn off cathodic cleaning voltages
+		DACVoltageSet(0, 0, false);	// WEs
+		DACVoltageSet(5, 0, true);	// ORP
+		IO_Ext_Set(IO_EXT2_ADDR, 3, WORK_EL_HIGH_CURRENT, 0);
+
+		// Disconnect ORP sensor from driving circuitry
+		IO_Ext_Set(IO_EXT2_ADDR, 2, ORP_SW_A0, 0);
+		IO_Ext_Set(IO_EXT2_ADDR, 2, ORP_SW_A1, 0);
+
+#ifndef MEMORY_V5
+		// Write 8 bytes to save both the starting and final currents
+		MemoryWrite(page, OFFSET_CLEAN_CATH_START, 8, (uint8_t *) fI_WE);
+#endif
+
+		//
+		// Anodic Oxide Rebuild
+		//
+		float WEVoltages[5];
+#ifndef MEMORY_V5
+		int16_t Start_V[5];
+#endif
+
+		if(Oxide_Rebuild > 0)
+		{
+			if((gui32Error & ABORT_ERRORS) == 0 && Oxide_Rebuild == 1)
+			{
+				DEBUG_PRINT(
+						UARTprintf("Rebuilding Oxide for %d seconds... \n", (int) Rebuild_time);
+				UARTprintf("Current at %d nA... \n", (int) (fI_drive * 1000));
+				)
+
+					// Connect all electrodes separately to drive current through each
+					IO_Ext_Set(IO_EXT1_ADDR, 3, WORK_EL_SWA, 0);
+				IO_Ext_Set(IO_EXT1_ADDR, 3, WORK_EL_SWB, 1);
+
+				float Voltage;
+				EEPROMRead((uint32_t *) &Voltage, OFFSET_AMP_I_VSET, 4);
+				if(Voltage == Voltage && Voltage <= 3000 && Voltage >= 0)
+				{
+
+					if(fI_drive != 3)
+					{
+						Voltage = 3000 - fI_drive / 3.0 * (3000 - Voltage);
+						DEBUG_PRINT(UARTprintf("Vset pulled from EEPROM, calculated %d uV!\n", (int) (Voltage * 1000));)
+					}
+					else
+					{
+						DEBUG_PRINT(UARTprintf("Vset pulled from EEPROM, theory 1410, using %d uV!\n", (int) (Voltage * 1000));)
+					}
+				}
+				else
+				{
+					DEBUG_PRINT(UARTprintf("Vset not saved to EEPROM, calculating based on theory!\n");)
+						if(gABoard >= ARV1_0B)
+							Voltage = 3000 - fI_drive * 180;//180; // mV // Op-amp hardware
+						else if(gABoard >= AV6_4)
+							Voltage = 3000 - fI_drive * 30; // mV // Op-amp hardware driving 5 arrays
+						else if(gABoard >= AV6)
+							//		Voltage = 3000 - fI_drive * 30; // mV // Op-amp hardware driving 5 arrays, Resistor changed from 430 kOhms to 30 kOhms to allow current for BES rinse
+							Voltage = 3000 - fI_drive * 430; // mV // Op-amp hardware driving 5 arrays
+						else
+							Voltage = 3300 - fI_drive * 430; // mV // Op-amp hardware with all arrays tied together
+				}
+
+				//		DACVoltageSet(1, Voltage, false);	// Gold array
+				DACVoltageSet(2, Voltage, true);	// 5 platinum arrays
+
+				int j;
+				TimerLoadSet(TIMER1_BASE, TIMER_A, SysCtlClockGet() * 1); // Set periodic timer
+				TimerEnable(TIMER1_BASE, TIMER_A);
+				for(i = 0; i < Rebuild_time; i++)
+				{
+					while(g_TimerPeriodicInterruptFlag == 0);
+					g_TimerPeriodicInterruptFlag = 0;
+
+					DEBUG_PRINT(UARTprintf("Voltages after %d second(s) are: ", (i + 1));)
+					for(j = 0; j < 5; j++)
+					{
+						WEVoltages[j] = ADCReadAvg((j+1), ADC4_CS_B, 1);
+						DEBUG_PRINT(UARTprintf("%d, ", (int) WEVoltages[j]);)
+#ifndef MEMORY_V5
+						if(i == 0)
+							Start_V[j] = WEVoltages[j];	// Keep the starting voltages so they can be saved in memory later
+#endif
+					}
+					DEBUG_PRINT(UARTprintf("\n");)
+
+					// Program check for specific value range
+					if(i == (Rebuild_time - 1))
+					{
+						if(((FindArrayMax(WEVoltages, 5) - FindArrayMin(WEVoltages, 5)) > 500))
+						{
+							DEBUG_PRINT(UARTprintf("Voltages should be closer together!\n");)
+								gui32Error |= CL_CLEANING_OUT_OF_RANGE;
+							update_Error();
+						}
+
+						if(FindArrayMax(WEVoltages, 5) > 2000 || FindArrayMin(WEVoltages, 5) < 1000)
+						{
+							DEBUG_PRINT(UARTprintf("Voltages outside expected range!\n");)
+								gui32Error |= CL_CLEANING_OUT_OF_RANGE;
+							update_Error();
+						}
+					}
+
+					if((gui32Error & ABORT_ERRORS) != 0)
+						break;
+				}
+				TimerDisable(TIMER1_BASE, TIMER_A);
+				g_TimerPeriodicInterruptFlag = 0;
+
+				//	DACVoltageSet(1, 3000, false);	// Gold array
+				DACVoltageSet(2, 3000, true);	// 5 platinum arrays
+
+#ifndef MEMORY_V5
+				uint8_t Rebuild_time = 10;
+				MemoryWrite(page, OFFSET_CLEAN_REBUILD_TIME, 1, &Rebuild_time);
+#endif
+			}
+			if((gui32Error & ABORT_ERRORS) == 0 && Oxide_Rebuild == 2)
+			{
+				DEBUG_PRINT(UARTprintf("Rebuilding Oxide until a set mV... \n");)
+
+					// Connect all electrodes separately to drive current through each
+					IO_Ext_Set(IO_EXT1_ADDR, 3, WORK_EL_SWA, 0);
+				IO_Ext_Set(IO_EXT1_ADDR, 3, WORK_EL_SWB, 1);
+
+				float Voltage;
+				EEPROMRead((uint32_t *) &Voltage, OFFSET_AMP_I_VSET, 4);
+				if(Voltage == Voltage && Voltage <= 3000 && Voltage >= 0)
 				{
 					DEBUG_PRINT(UARTprintf("Vset pulled from EEPROM, theory 1410, using %d uV!\n", (int) (Voltage * 1000));)
 				}
-			}
-			else
-			{
-				DEBUG_PRINT(UARTprintf("Vset not saved to EEPROM, calculating based on theory!\n");)
-				if(gABoard >= ARV1_0B)
-					Voltage = 3000 - fI_drive * 180;//180; // mV // Op-amp hardware
-				else if(gABoard >= AV6_4)
-					Voltage = 3000 - fI_drive * 30; // mV // Op-amp hardware driving 5 arrays
-				else if(gABoard >= AV6)
-					//		Voltage = 3000 - fI_drive * 30; // mV // Op-amp hardware driving 5 arrays, Resistor changed from 430 kOhms to 30 kOhms to allow current for BES rinse
-					Voltage = 3000 - fI_drive * 430; // mV // Op-amp hardware driving 5 arrays
 				else
-					Voltage = 3300 - fI_drive * 430; // mV // Op-amp hardware with all arrays tied together
-			}
-
-			//		DACVoltageSet(1, Voltage, false);	// Gold array
-			DACVoltageSet(2, Voltage, true);	// 5 platinum arrays
-
-			int j;
-			TimerLoadSet(TIMER1_BASE, TIMER_A, SysCtlClockGet() * 1); // Set periodic timer
-			TimerEnable(TIMER1_BASE, TIMER_A);
-			for(i = 0; i < Rebuild_time; i++)
-			{
-				while(g_TimerPeriodicInterruptFlag == 0);
-				g_TimerPeriodicInterruptFlag = 0;
-
-				DEBUG_PRINT(UARTprintf("Voltages after %d second(s) are: ", (i + 1));)
-				for(j = 0; j < 5; j++)
 				{
-					WEVoltages[j] = ADCReadAvg((j+1), ADC4_CS_B, 1);
-					DEBUG_PRINT(UARTprintf("%d, ", (int) WEVoltages[j]);)
-#ifndef MEMORY_V5
-					if(i == 0)
-						Start_V[j] = WEVoltages[j];	// Keep the starting voltages so they can be saved in memory later
-#endif
-				}
-				DEBUG_PRINT(UARTprintf("\n");)
-
-				// Program check for specific value range
-				if(i == (Rebuild_time - 1))
-				{
-					if(((FindArrayMax(WEVoltages, 5) - FindArrayMin(WEVoltages, 5)) > 500))
-					{
-						DEBUG_PRINT(UARTprintf("Voltages should be closer together!\n");)
-						gui32Error |= CL_CLEANING_OUT_OF_RANGE;
-						update_Error();
-					}
-
-					if(FindArrayMax(WEVoltages, 5) > 2000 || FindArrayMin(WEVoltages, 5) < 1000)
-					{
-						DEBUG_PRINT(UARTprintf("Voltages outside expected range!\n");)
-						gui32Error |= CL_CLEANING_OUT_OF_RANGE;
-						update_Error();
-					}
+					DEBUG_PRINT(UARTprintf("Vset not saved to EEPROM, calculating based on theory!\n");)
+						if(gABoard >= AV6_4)
+							Voltage = 3000 - fI_drive * 30; // mV // Op-amp hardware driving 5 arrays
+						else if(gABoard >= AV6)
+							//		Voltage = 3000 - fI_drive * 30; // mV // Op-amp hardware driving 5 arrays, Resistor changed from 430 kOhms to 30 kOhms to allow current for BES rinse
+							Voltage = 3000 - fI_drive * 430; // mV // Op-amp hardware driving 5 arrays
+						else
+							Voltage = 3300 - fI_drive * 430; // mV // Op-amp hardware with all arrays tied together
 				}
 
-				if((gui32Error & ABORT_ERRORS) != 0)
-					break;
-			}
-			TimerDisable(TIMER1_BASE, TIMER_A);
-			g_TimerPeriodicInterruptFlag = 0;
+				//		DACVoltageSet(1, Voltage, false);	// Gold array
+				DACVoltageSet(2, Voltage, true);	// 5 platinum arrays
 
-			//	DACVoltageSet(1, 3000, false);	// Gold array
-			DACVoltageSet(2, 3000, true);	// 5 platinum arrays
+				int j;
+				TimerLoadSet(TIMER1_BASE, TIMER_A, SysCtlClockGet() * .1); // Set periodic timer
+				TimerEnable(TIMER1_BASE, TIMER_A);
 
-#ifndef MEMORY_V5
-			uint8_t Rebuild_time = 10;
-			MemoryWrite(page, OFFSET_CLEAN_REBUILD_TIME, 1, &Rebuild_time);
-#endif
-		}
-		if((gui32Error & ABORT_ERRORS) == 0 && Oxide_Rebuild == 2)
-		{
-			DEBUG_PRINT(UARTprintf("Rebuilding Oxide until a set mV... \n");)
-
-			// Connect all electrodes separately to drive current through each
-			IO_Ext_Set(IO_EXT1_ADDR, 3, WORK_EL_SWA, 0);
-			IO_Ext_Set(IO_EXT1_ADDR, 3, WORK_EL_SWB, 1);
-
-			float Voltage;
-			EEPROMRead((uint32_t *) &Voltage, OFFSET_AMP_I_VSET, 4);
-			if(Voltage == Voltage && Voltage <= 3000 && Voltage >= 0)
-			{
-				DEBUG_PRINT(UARTprintf("Vset pulled from EEPROM, theory 1410, using %d uV!\n", (int) (Voltage * 1000));)
-			}
-			else
-			{
-				DEBUG_PRINT(UARTprintf("Vset not saved to EEPROM, calculating based on theory!\n");)
-				if(gABoard >= AV6_4)
-					Voltage = 3000 - fI_drive * 30; // mV // Op-amp hardware driving 5 arrays
-				else if(gABoard >= AV6)
-					//		Voltage = 3000 - fI_drive * 30; // mV // Op-amp hardware driving 5 arrays, Resistor changed from 430 kOhms to 30 kOhms to allow current for BES rinse
-					Voltage = 3000 - fI_drive * 430; // mV // Op-amp hardware driving 5 arrays
-				else
-					Voltage = 3300 - fI_drive * 430; // mV // Op-amp hardware with all arrays tied together
-			}
-
-			//		DACVoltageSet(1, Voltage, false);	// Gold array
-			DACVoltageSet(2, Voltage, true);	// 5 platinum arrays
-
-			int j;
-			TimerLoadSet(TIMER1_BASE, TIMER_A, SysCtlClockGet() * .1); // Set periodic timer
-			TimerEnable(TIMER1_BASE, TIMER_A);
-
-			i = 0;
-			uint8_t check = 1;
-			float Avg = 0;
-			while((i + 1) < 30 || (i < 300 && check == 1 && Avg < 1470))	// Set max of 30 seconds oxide rebuild TODO: Set the average mV to rebuild to in this while loop
-			{
-				while(g_TimerPeriodicInterruptFlag == 0);
-				g_TimerPeriodicInterruptFlag = 0;
-
-				DEBUG_PRINT(
-				if((i + 1) % 10 == 0)
-					UARTprintf("Voltages after %d second(s) are: ", (i + 1)/10);
-				)
-
-				for(j = 0; j < 5; j++)
+				i = 0;
+				uint8_t check = 1;
+				float Avg = 0;
+				while((i + 1) < 30 || (i < 300 && check == 1 && Avg < 1470))	// Set max of 30 seconds oxide rebuild TODO: Set the average mV to rebuild to in this while loop
 				{
-					WEVoltages[j] = ADCReadAvg((j+1), ADC4_CS_B, 1);
+					while(g_TimerPeriodicInterruptFlag == 0);
+					g_TimerPeriodicInterruptFlag = 0;
+
 					DEBUG_PRINT(
-					if((i + 1) % 10 == 0)
-						UARTprintf("%d, ", (int) WEVoltages[j]);
+							if((i + 1) % 10 == 0)
+								UARTprintf("Voltages after %d second(s) are: ", (i + 1)/10);
 					)
+
+					for(j = 0; j < 5; j++)
+					{
+						WEVoltages[j] = ADCReadAvg((j+1), ADC4_CS_B, 1);
+						DEBUG_PRINT(
+								if((i + 1) % 10 == 0)
+									UARTprintf("%d, ", (int) WEVoltages[j]);
+						)
 #ifndef MEMORY_V5
-					if(i == 0)
-						Start_V[j] = WEVoltages[j];	// Keep the starting voltages so they can be saved in memory later
+						if(i == 0)
+							Start_V[j] = WEVoltages[j];	// Keep the starting voltages so they can be saved in memory later
 #endif
-				}
-				DEBUG_PRINT(
-				if((i + 1) % 10 == 0)
-					UARTprintf("\n");
-				)
-
-				// Check after 3 seconds that things look ok, if they do continue until the set voltage is reached
-				if((i + 1) == 30)
-				{
-					if(((FindArrayMax(WEVoltages, 5) - FindArrayMin(WEVoltages, 5)) > 500) || FindArrayMax(WEVoltages, 5) > 1600 || FindArrayMin(WEVoltages, 5) < 750)
-					{
-						DEBUG_PRINT(UARTprintf("Voltages should be closer together or aren't in the right range! Leaving Oxide Rebuild!\n");)
-						check = 0;
-						gui32Error |= CL_CLEANING_OUT_OF_RANGE;
-						update_Error();
 					}
-				}
-				if((i + 1) > 30)	// 3 seconds have elapsed, start watching current to reach level
-				{
-					uint8_t index;
-					Avg = 0;
-					for(index = 0; index < 5; index++)
+					DEBUG_PRINT(
+							if((i + 1) % 10 == 0)
+								UARTprintf("\n");
+					)
+
+					// Check after 3 seconds that things look ok, if they do continue until the set voltage is reached
+					if((i + 1) == 30)
 					{
-						Avg += WEVoltages[index];
+						if(((FindArrayMax(WEVoltages, 5) - FindArrayMin(WEVoltages, 5)) > 500) || FindArrayMax(WEVoltages, 5) > 1600 || FindArrayMin(WEVoltages, 5) < 750)
+						{
+							DEBUG_PRINT(UARTprintf("Voltages should be closer together or aren't in the right range! Leaving Oxide Rebuild!\n");)
+								check = 0;
+							gui32Error |= CL_CLEANING_OUT_OF_RANGE;
+							update_Error();
+						}
 					}
-					Avg /= 5;
+					if((i + 1) > 30)	// 3 seconds have elapsed, start watching current to reach level
+					{
+						uint8_t index;
+						Avg = 0;
+						for(index = 0; index < 5; index++)
+						{
+							Avg += WEVoltages[index];
+						}
+						Avg /= 5;
+					}
+
+					i++;
+
+					if((gui32Error & ABORT_ERRORS) != 0)
+						break;
 				}
+				TimerDisable(TIMER1_BASE, TIMER_A);
+				g_TimerPeriodicInterruptFlag = 0;
 
-				i++;
+				//	DACVoltageSet(1, 3000, false);	// Gold array
+				DACVoltageSet(2, 3000, true);	// 5 platinum arrays
 
-				if((gui32Error & ABORT_ERRORS) != 0)
-					break;
+#ifndef MEMORY_V5
+				uint8_t Rebuild_time = (i / 10);
+				MemoryWrite(page, OFFSET_CLEAN_REBUILD_TIME, 1, &Rebuild_time);
+#endif
 			}
-			TimerDisable(TIMER1_BASE, TIMER_A);
-			g_TimerPeriodicInterruptFlag = 0;
 
-			//	DACVoltageSet(1, 3000, false);	// Gold array
-			DACVoltageSet(2, 3000, true);	// 5 platinum arrays
-
-#ifndef MEMORY_V5
-			uint8_t Rebuild_time = (i / 10);
-			MemoryWrite(page, OFFSET_CLEAN_REBUILD_TIME, 1, &Rebuild_time);
-#endif
 		}
 
+		SysCtlDelay(SysCtlClockGet()/6);	// Wait 1/2 second after turning off current to allow capacitor to discharge
+
+		// Let the working electrodes float after cleaning
+		IO_Ext_Set(IO_EXT1_ADDR, 3, WORK_EL_SWA, 0);
+		IO_Ext_Set(IO_EXT1_ADDR, 3, WORK_EL_SWB, 0);
+
+		//	// Let Metals electrode float after cleaning
+		//	IO_Ext_Set(IO_EXT2_ADDR, 3, METALS_SW_EN, 0);
+		//	IO_Ext_Set(IO_EXT2_ADDR, 3, METALS_WE_SWB, 0);
+		//	IO_Ext_Set(IO_EXT2_ADDR, 3, METALS_WE_SWA, 0);
+
+		// Let reference and counter electrodes float
+		IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWA, 1);
+		IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWB, 0);
+
+#ifndef MEMORY_V5
+		int16_t End_V[5];	// Changing voltages to int16_t to save space in memory
+		for(i = 0; i < 5; i++)
+			End_V[i] = WEVoltages[i];
+
+		MemoryWrite(page, OFFSET_CLEAN_ARRAY_1_START, 10, (uint8_t *) Start_V);
+		MemoryWrite(page, OFFSET_CLEAN_ARRAY_1_FINAL, 10, (uint8_t *) End_V);
+#endif
+
+		DEBUG_PRINT(UARTprintf("Cleaning completed! \n");)
 	}
 
-	SysCtlDelay(SysCtlClockGet()/6);	// Wait 1/2 second after turning off current to allow capacitor to discharge
-
-	// Let the working electrodes float after cleaning
-	IO_Ext_Set(IO_EXT1_ADDR, 3, WORK_EL_SWA, 0);
-	IO_Ext_Set(IO_EXT1_ADDR, 3, WORK_EL_SWB, 0);
-
-//	// Let Metals electrode float after cleaning
-//	IO_Ext_Set(IO_EXT2_ADDR, 3, METALS_SW_EN, 0);
-//	IO_Ext_Set(IO_EXT2_ADDR, 3, METALS_WE_SWB, 0);
-//	IO_Ext_Set(IO_EXT2_ADDR, 3, METALS_WE_SWA, 0);
-
-	// Let reference and counter electrodes float
-	IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWA, 1);
-	IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWB, 0);
-
-#ifndef MEMORY_V5
-	int16_t End_V[5];	// Changing voltages to int16_t to save space in memory
-	for(i = 0; i < 5; i++)
-		End_V[i] = WEVoltages[i];
-
-	MemoryWrite(page, OFFSET_CLEAN_ARRAY_1_START, 10, (uint8_t *) Start_V);
-	MemoryWrite(page, OFFSET_CLEAN_ARRAY_1_FINAL, 10, (uint8_t *) End_V);
-#endif
-
-	DEBUG_PRINT(UARTprintf("Cleaning completed! \n");)
 }
 
 //**************************************************************************

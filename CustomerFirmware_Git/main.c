@@ -332,6 +332,7 @@
 //		V01.03.14: Created 12/12/2023: Moved all calibration math and saving to before determining if a solution needs to be repumped, this allows me to determine if Cal passed
 //			when deciding how big of buffer primes to do as well as display the cal data over the BT more quickly also removes the second set of calibration math so it all happens in one place
 //		V01.03.15: Created 12/20/2023: Added support for disinfection cartridge, the choosing functions for pH and NH4 need to be updated, currently it will only pick out of the first 3 spots not 6 and 4 like it could
+//			1/8/2024: Added update_Cartridge_Status call after rewriting expiration date so BT is updated immediately, added wrapper around CleanAmps function to skip the whole thing if abort error
 //*****************************************************************************
 #include <stdio.h>
 #include <stdint.h>
@@ -2166,6 +2167,8 @@ int main(void) {
 
 					MemoryWrite(PAGE_CARTRIDGE_INFO, OFFSET_SENSOR_EXPIRATION_DATE, 4, NewExpDate);
 				}
+
+				update_Cartridge_Status(gCartridge);
 			}
 #endif
 
