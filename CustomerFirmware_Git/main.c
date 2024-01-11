@@ -333,6 +333,7 @@
 //			when deciding how big of buffer primes to do as well as display the cal data over the BT more quickly also removes the second set of calibration math so it all happens in one place
 //		V01.03.15: Created 12/20/2023: Added support for disinfection cartridge, the choosing functions for pH and NH4 need to be updated, currently it will only pick out of the first 3 spots not 6 and 4 like it could
 //			1/8/2024: Added update_Cartridge_Status call after rewriting expiration date so BT is updated immediately, added wrapper around CleanAmps function to skip the whole thing if abort error
+//		V01.03.16: Created 1/10/2024: Changed to a universal choosing function for the ISEs, updated to be compatible with disinfection cartridge
 //*****************************************************************************
 #include <stdio.h>
 #include <stdint.h>
@@ -8204,10 +8205,16 @@ int main(void) {
 						{DEBUG_PRINT(UARTprintf("Thermistor temperature outside of range, not adjusting pH!\n");)}
 					DEBUG_PRINT(UARTprintf("\n");)
 
+#ifndef UNIVERSAL_PICKING_FUNCTION
 					if(ISEs.Config == PH_H2_CART)
 						T_Chosen_pH = Choose_pH_Sensor_pHDie(Cal_Number, ISE_Reading);
 					else
 						T_Chosen_pH = Choose_pH_Sensor(Cal_Number, pH_Cr_Samp, pH_Cr_E_Rinse, T_RS, ISEs, Sols);
+#else	// UNIVERSAL_PICKING_FUNCTION
+					T_Chosen_pH = Choose_Sensor(Cal_Number, pH_Cr_Samp, pH_Cr_E_Rinse, T_Rinse, ISEs.pH_Cr, Sols);
+#endif	// UNIVERSAL_PICKING_FUNCTION
+
+
 
 					// Recalculate the uncorrected pH for the chosen sensor so it can be used in NH4 math
 					pH_Cr_Samp_RS = pH_TCor_Rinse + ((pH_Cr_E_Samp[T_Chosen_pH] - pH_Cr_E_Rinse[T_Chosen_pH]) / (pH_Cr_EEP_Slope[T_Chosen_pH] * (T_RS + 273.0) / (T_EEP_Cal + 273.0))); // pH of sample
@@ -8312,7 +8319,12 @@ int main(void) {
 						Ca_Hardness[i] = Ca_M_conc * 100086.9;	// [Ca Hardness] ppm CaCO3
 					}
 
+#ifndef UNIVERSAL_PICKING_FUNCTION
 					T_Chosen_Ca = Choose_Ca_Sensor(Cal_Number, Ca_Hardness, Ca_E_Rinse, ISEs, Sols);
+#else	// UNIVERSAL_PICKING_FUNCTION
+					T_Chosen_Ca = Choose_Sensor(Cal_Number, Ca_Hardness, Ca_E_Rinse, T_Rinse, ISEs.Ca, Sols);
+#endif	// UNIVERSAL_PICKING_FUNCTION
+
 #ifndef TESTING_MODE
 					if(Ca_Hardness[T_Chosen_Ca] < 0)
 						Ca_Hardness[T_Chosen_Ca] = 0;
@@ -8468,7 +8480,12 @@ int main(void) {
 							TH_corr[i] = Ca_Hardness[T_Chosen_Ca];
 					}
 
+#ifndef UNIVERSAL_PICKING_FUNCTION
 					T_Chosen_TH = Choose_TH_Sensor(Cal_Number, TH_corr, TH_E_Rinse, ISEs, Sols);
+#else	// UNIVERSAL_PICKING_FUNCTION
+					T_Chosen_TH = Choose_Sensor(Cal_Number, TH_corr, TH_E_Rinse, T_Rinse, ISEs.TH, Sols);
+#endif	// UNIVERSAL_PICKING_FUNCTION
+
 #ifndef TESTING_MODE
 					if(TH_corr[T_Chosen_TH] < 0)
 						TH_corr[T_Chosen_TH] = 0;
@@ -8669,7 +8686,12 @@ int main(void) {
 								TH_iterated[i] = Mg_Calc + Ca_Hardness[T_Chosen_Ca];
 						}
 
+
+#ifndef UNIVERSAL_PICKING_FUNCTION
 						T_Chosen_TH_RR = Choose_TH_Sensor(Cal_Number, TH_iterated, TH_E_Rinse, ISEs, Sols);
+#else	// UNIVERSAL_PICKING_FUNCTION
+						T_Chosen_TH_RR = Choose_Sensor(Cal_Number, TH_iterated, TH_E_Rinse, T_Rinse, ISEs.TH, Sols);
+#endif	// UNIVERSAL_PICKING_FUNCTION
 
 #ifdef REPORT_TH_RATIO_RAMP
 						if(Cond_Cal_Status && ISE_Cal_Status[ISEs.Ca.index + T_Chosen_Ca] && ISE_Cal_Status[ISEs.TH.index + T_Chosen_TH_RR])
@@ -8777,7 +8799,14 @@ int main(void) {
 						//					NH4_NH3_N_Total[i] = NH4_NH3_N_Free[i] / NH4_Alpha; // Total ammonia not including monochloramine
 					}
 
+
+#ifndef UNIVERSAL_PICKING_FUNCTION
 					T_Chosen_NH4 = Choose_NH4_Sensor(Cal_Number, NH4_NH3_N_Free, NH4_E_Rinse, ISEs, Sols);
+#else	// UNIVERSAL_PICKING_FUNCTION
+					T_Chosen_NH4 = Choose_Sensor(Cal_Number, NH4_NH3_N_Free, NH4_E_Rinse, T_Rinse, ISEs.NH4, Sols);
+#endif	// UNIVERSAL_PICKING_FUNCTION
+
+
 #ifndef TESTING_MODE
 					if(NH4_NH3_N_Free[T_Chosen_NH4] < 0)
 						NH4_NH3_N_Free[T_Chosen_NH4] = 0;
@@ -9522,6 +9551,8 @@ int main(void) {
 									DEBUG_PRINT(UARTprintf("Appears no sensor has enough data to calculate alk, picking a sensor and running again!\n");)
 									mixing_index = 0;
 									uint8_t Mix_Chosen_pH_1, Mix_Chosen_pH_2;
+
+#ifndef UNIVERSAL_PICKING_FUNCTION
 									if(ISEs.Config == PH_H2_CART)
 									{
 										Mix_Chosen_pH_1 = Choose_pH_Sensor_pHDie(Cal_Number, pH_Samp_T1);
@@ -9540,6 +9571,19 @@ int main(void) {
 											Mix_Chosen_pH_2 = Choose_pH_Sensor(Cal_Number, pH_Samp_T1 + 10, pH_Cr_E_Rinse, T_Rinse, ISEs, Sols) + ISEs.pH_Cr.index;
 										}
 									}
+#else	// UNIVERSAL_PICKING_FUNCTION
+
+									if(ISEs.pH_H2.size > 0)
+									{
+										Mix_Chosen_pH_1 = Choose_Sensor(Cal_Number, pH_Samp_T1, pH_H2_E_Rinse, T_Rinse, ISEs.pH_H2, Sols) + ISEs.pH_H2.index;
+										Mix_Chosen_pH_2 = Choose_Sensor(Cal_Number, pH_Samp_T1 + 10, pH_H2_E_Rinse, T_Rinse, ISEs.pH_H2, Sols) + ISEs.pH_H2.index;
+									}
+									else
+									{
+										Mix_Chosen_pH_1 = Choose_Sensor(Cal_Number, pH_Samp_T1, pH_Cr_E_Rinse, T_Rinse, ISEs.pH_Cr, Sols) + ISEs.pH_Cr.index;
+										Mix_Chosen_pH_2 = Choose_Sensor(Cal_Number, pH_Samp_T1 + 10, pH_Cr_E_Rinse, T_Rinse, ISEs.pH_Cr, Sols) + ISEs.pH_Cr.index;
+									}
+#endif	// UNIVERSAL_PICKING_FUNCTION
 
 									// Need to decide which mix to keep...
 									if(Mix_Chosen_pH_1 == Mix_Chosen_pH_2)
@@ -9572,6 +9616,8 @@ int main(void) {
 							if(mixing_index == 0)	// If this was first mix, and it was inbounds, calculate the steps for the second mix
 							{
 								uint8_t Mix_Chosen_pH;
+
+#ifndef UNIVERSAL_PICKING_FUNCTION
 								if(ISEs.Config == PH_H2_CART)
 									Mix_Chosen_pH = Choose_pH_Sensor_pHDie(Cal_Number, pH_Samp_T1);
 								else
@@ -9579,6 +9625,13 @@ int main(void) {
 										Mix_Chosen_pH = Choose_pH_H2_Sensor(Cal_Number, pH_Samp_T1, pH_H2_E_Rinse, T_Rinse, ISEs, Sols);
 									else
 										Mix_Chosen_pH = Choose_pH_Sensor(Cal_Number, pH_Samp_T1, pH_Cr_E_Rinse, T_Rinse, ISEs, Sols);
+#else	// UNIVERSAL_PICKING_FUNCTION
+								if(ISEs.pH_H2.size > 0)
+									Mix_Chosen_pH = Choose_Sensor(Cal_Number, pH_Samp_T1, pH_H2_E_Rinse, T_Rinse, ISEs.pH_H2, Sols);
+								else
+									Mix_Chosen_pH = Choose_Sensor(Cal_Number, pH_Samp_T1, pH_Cr_E_Rinse, T_Rinse, ISEs.pH_Cr, Sols);
+#endif	// UNIVERSAL_PICKING_FUNCTION
+
 								DEBUG_PRINT(UARTprintf("Using pH of %d pH * 1000 to calculate steps for second mix!\n", (int) (pH_H2_Samp_T1[Mix_Chosen_pH] * 1000));)
 								float Volume_Temp = (((float) (PumpVol_T1[0] - Volume_T1_dead) * (Sols->HCl_N - pow(10, -pH_H2_Samp_T1[Mix_Chosen_pH])) + Volume_Sample * (pow(10, -3.6) - pow(10, -pH_H2_Samp_T1[Mix_Chosen_pH]))) / (Sols->HCl_N - pow(10, -3.6))) + Volume_T1_dead;
 
@@ -10344,7 +10397,13 @@ int main(void) {
 					}
 
 					ConnectMemory(1);
+
+
+#ifndef UNIVERSAL_PICKING_FUNCTION
 					uint8_t T_Chosen_pH_T1 = Choose_pH_Sensor(Cal_Number, pH_Samp_T1, &ISE_E_Rinse[ISEs.pH_Cr.index], T_RS, ISEs, Sols);
+#else	// UNIVERSAL_PICKING_FUNCTION
+					uint8_t T_Chosen_pH_T1 = Choose_Sensor(Cal_Number, pH_Samp_T1, pH_Cr_E_Rinse, T_Rinse, ISEs.pH_Cr, Sols);
+#endif	// UNIVERSAL_PICKING_FUNCTION
 
 					//
 					// NH4 Measurement
@@ -10386,7 +10445,13 @@ int main(void) {
 					DEBUG_PRINT(UARTprintf("pH Cr:\t=%d/1000\t=%d/1000\n", (int) (pH_Samp_T1[ISEs.pH_Cr.index] * 1000), (int) (pH_Samp_T1[ISEs.pH_Cr.index + 1] * 1000));)
 					DEBUG_PRINT(UARTprintf("NH4 of mixed T1:\t=%d/1000\t=%d/1000\n\n", (int) (NH4_NH3_N_Free[0] * 1000), (int) (NH4_NH3_N_Free[1] * 1000));)
 
+
+#ifndef UNIVERSAL_PICKING_FUNCTION
 					T_Chosen_NH4 = Choose_NH4_Sensor(Cal_Number, NH4_NH3_N_Free, NH4_E_Rinse, ISEs, Sols);
+#else	// UNIVERSAL_PICKING_FUNCTION
+					T_Chosen_NH4 = Choose_Sensor(Cal_Number, NH4_NH3_N_Free, NH4_E_Rinse, T_Rinse, ISEs.NH4, Sols);
+#endif	// UNIVERSAL_PICKING_FUNCTION
+
 
 					if(NH4_NH3_N_Free[T_Chosen_NH4] < 0)
 						NH4_NH3_N_Free[T_Chosen_NH4] = 0;
@@ -13133,7 +13198,12 @@ int main(void) {
 					if(T_Therm < 2 || T_Therm > 50)
 						{DEBUG_PRINT(UARTprintf("Thermistor temp read outside acceptable range, not adjusting pH!\n");)}
 
+
+#ifndef UNIVERSAL_PICKING_FUNCTION
 					T_Chosen_pH = Choose_pH_Sensor_pHDie(Cal_Number, ISE_Reading);
+#else	// UNIVERSAL_PICKING_FUNCTION
+					T_Chosen_pH = Choose_Sensor(Cal_Number, pH_Cr_Samp, pH_Cr_E_Rinse, T_Rinse, ISEs.pH_Cr, Sols);
+#endif	// UNIVERSAL_PICKING_FUNCTION
 
 					if(ISE_Cal_Status[ISEs.pH_Cr.index + T_Chosen_pH] && ISEs.pH_Cr.size > 0)	// Check that chosen sensor passed calibration before reporting a number
 						MemoryWrite(Test_page, OFFSET_TEST_PH, 4, (uint8_t *) &pH_Cr_Samp[T_Chosen_pH]);
