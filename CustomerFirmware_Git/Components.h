@@ -16,7 +16,7 @@
 //
 //*****************************************************************************
 //#define COND_FREQ	1000
-#define COND_FREQ	5000
+#define COND_FREQ	(gABoard >= ARV1_0B ? 5000 : 1000)
 
 //// This is the normal configuration
 //// Defines for which sensor is on ADC channels
