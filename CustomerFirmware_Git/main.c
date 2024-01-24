@@ -333,6 +333,7 @@
 //			when deciding how big of buffer primes to do as well as display the cal data over the BT more quickly also removes the second set of calibration math so it all happens in one place
 //		V01.03.15: Created 12/20/2023: Added support for disinfection cartridge, the choosing functions for pH and NH4 need to be updated, currently it will only pick out of the first 3 spots not 6 and 4 like it could
 //			1/8/2024: Added update_Cartridge_Status call after rewriting expiration date so BT is updated immediately, added wrapper around CleanAmps function to skip the whole thing if abort error
+//		1/22/2024: Using Rinse as the middle point for the conductivity calibration, found it is more consistent than Clean
 //*****************************************************************************
 #include <stdio.h>
 #include <stdint.h>
@@ -706,6 +707,9 @@ int main(void) {
 
 	// Initialize all components and steppers, find valve stepper home
 	Init_all(0);
+
+//	RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
+//	TurnValveToStore();
 
 	if(gui32Error & INITILIZATION_FAILED != 0)
 	{
@@ -2813,11 +2817,11 @@ int main(void) {
 					IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWB, 0);
 #endif
 
-#ifdef TESTING_MODE
+//#ifdef TESTING_MODE
 					if((gui32Error & ABORT_ERRORS) == 0)
-#else
-					if((gui32Error & ABORT_ERRORS) == 0 && (Sols->Cond_EEP_Clean != Sols->Cond_EEP_Clean || ISEs.Config == PH_CL_CART))
-#endif
+//#else
+//					if((gui32Error & ABORT_ERRORS) == 0 && (Sols->Cond_EEP_Clean != Sols->Cond_EEP_Clean || ISEs.Config == PH_CL_CART))
+//#endif
 
 					{
 						ConnectMemory(0);
@@ -2877,20 +2881,6 @@ int main(void) {
 						IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 1);
 						IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 1);
 
-						//					userDelay(Cond_delay, 1);
-//						uint8_t Check = 0;
-//						while(Check != 1)
-//						{
-//							WaveGenSet(1);
-//
-//							Check = CheckCond();
-//							if(Check != 1)
-//							{
-//								InitWaveGen(1);
-////								break;
-//							}
-//						}
-
 						Check = 0;
 						attempt = 0;
 						while(Check != 1)
@@ -2911,8 +2901,8 @@ int main(void) {
 							}
 						}
 
-//						CalConductivityV2Mid = ConductivityMovingAvg();
-						Rinse_Cond_Mid_Raw = ConductivityMovingAvg();
+						CalConductivityV2Mid = ConductivityMovingAvg();
+//						Rinse_Cond_Mid_Raw = ConductivityMovingAvg();
 
 						WaveGenSet(0);	// Turn off waveform generator when switching ranges
 
@@ -2955,16 +2945,16 @@ int main(void) {
 							}
 						}
 
-//						CalConductivityV2High = ConductivityMovingAvg();
-						Rinse_Cond_High_Raw = ConductivityMovingAvg();
+						CalConductivityV2High = ConductivityMovingAvg();
+//						Rinse_Cond_High_Raw = ConductivityMovingAvg();
 
 						WaveGenSet(0);	// Turn off waveform generator
 
-						if((Sols->Cond_EEP_Clean != Sols->Cond_EEP_Clean || ISEs.Config == PH_CL_CART))
-						{
-							CalConductivityV2Mid = Rinse_Cond_Mid_Raw;
-							CalConductivityV2High = Rinse_Cond_High_Raw;
-						}
+//						if((Sols->Cond_EEP_Clean != Sols->Cond_EEP_Clean || ISEs.Config == PH_CL_CART))
+//						{
+//							CalConductivityV2Mid = Rinse_Cond_Mid_Raw;
+//							CalConductivityV2High = Rinse_Cond_High_Raw;
+//						}
 
 						ConnectMemory(1);
 
@@ -2980,8 +2970,8 @@ int main(void) {
 						if(I_High != I_High)
 							I_High = 43.57 * .812;	// Average from circuits before ARV1_0B
 
-						Rinse_Cond_Mid_Raw = (1000000 * I_Mid) / Rinse_Cond_Mid_Raw;
-						Rinse_Cond_High_Raw = (1000000 * I_High) / Rinse_Cond_High_Raw;
+						Rinse_Cond_Mid_Raw = (1000000 * I_Mid) / CalConductivityV2Mid;
+						Rinse_Cond_High_Raw = (1000000 * I_High) / CalConductivityV2High;
 
 						MemoryWrite(Cal_page, OFFSET_RINSE_MID_RAW, 4, (uint8_t *) &Rinse_Cond_Mid_Raw);
 						MemoryWrite(Cal_page, OFFSET_RINSE_HIGH_RAW, 4, (uint8_t *) &Rinse_Cond_High_Raw);
@@ -3118,7 +3108,7 @@ int main(void) {
 #endif
 
 
-								if((gui32Error & ABORT_ERRORS) == 0 && Sols->Cond_EEP_Clean == Sols->Cond_EEP_Clean)
+								if((gui32Error & ABORT_ERRORS) == 0 /*&& Sols->Cond_EEP_Clean == Sols->Cond_EEP_Clean*/)
 								{
 									ConnectMemory(0);
 
@@ -3181,7 +3171,7 @@ int main(void) {
 									}
 
 
-									CalConductivityV2Mid = ConductivityMovingAvg();
+									float Clean_Cond_Mid_Raw = ConductivityMovingAvg();
 
 									WaveGenSet(0);	// Turn off waveform generator when switching ranges
 
@@ -3224,7 +3214,7 @@ int main(void) {
 										}
 									}
 
-									CalConductivityV2High = ConductivityMovingAvg();
+									float Clean_Cond_High_Raw = ConductivityMovingAvg();
 
 
 									WaveGenSet(0);	// Turn off waveform generator
@@ -3244,8 +3234,8 @@ int main(void) {
 									if(I_High != I_High)
 										I_High = 43.57 * .812;	// Average from circuits before ARV1_0B
 
-									float Clean_Cond_Mid_Raw = (1000000 * I_Mid) / CalConductivityV2Mid;
-									float Clean_Cond_High_Raw = (1000000 * I_High) / CalConductivityV2High;
+									Clean_Cond_Mid_Raw = (1000000 * I_Mid) / Clean_Cond_Mid_Raw;
+									Clean_Cond_High_Raw = (1000000 * I_High) / Clean_Cond_High_Raw;
 
 									MemoryWrite(Cal_page, OFFSET_CLEAN_MID_RAW, 4, (uint8_t *) &Clean_Cond_Mid_Raw);
 									MemoryWrite(Cal_page, OFFSET_CLEAN_HIGH_RAW, 4, (uint8_t *) &Clean_Cond_High_Raw);
@@ -4058,7 +4048,8 @@ int main(void) {
 						{
 							// Put the 3 calibrants used in the array twice each, order doesn't matter here because the array will be sorted from smallest to largest
 							// Really only need 5 points with the highest conductivity calibrant in the array once, but to make it universal have an extra spot and the last spot will be ignored after sorting
-							float CalConds[3] = {Sols->Cond_EEP_Clean*(1 + Sols->Clean_Cond_TComp*(T_Cal - 25)), Sols->Cond_EEP_Cal_1*(1 + Sols->Cal_1_Cond_TComp*(T_Cal - 25)), Sols->Cond_EEP_Cal_2*(1 + Sols->Cal_2_Cond_TComp*(T_Cal - 25))};
+//							float CalConds[3] = {Sols->Cond_EEP_Clean*(1 + Sols->Clean_Cond_TComp*(T_Cal - 25)), Sols->Cond_EEP_Cal_1*(1 + Sols->Cal_1_Cond_TComp*(T_Cal - 25)), Sols->Cond_EEP_Cal_2*(1 + Sols->Cal_2_Cond_TComp*(T_Cal - 25))};
+							float CalConds[3] = {Sols->Cond_EEP_Rinse*(1 + Sols->Rinse_Cond_TComp*(T_Cal - 25)), Sols->Cond_EEP_Cal_1*(1 + Sols->Cal_1_Cond_TComp*(T_Cal - 25)), Sols->Cond_EEP_Cal_2*(1 + Sols->Cal_2_Cond_TComp*(T_Cal - 25))};
 							SortArray(CalConds, 3);
 
 							CalConductivitySlopeLow =  (CalConductivityV2LowInv - CalConductivityV1LowInv) / (CalConds[0] - CondLow);
@@ -4425,7 +4416,8 @@ int main(void) {
 						{
 							// Put the 3 calibrants used in the array twice each, order doesn't matter here because the array will be sorted from smallest to largest
 							// Really only need 5 points with the highest conductivity calibrant in the array once, but to make it universal have an extra spot and the last spot will be ignored after sorting
-							float CalConds[3] = {Sols->Cond_EEP_Clean*(1 + Sols->Clean_Cond_TComp*(T_Cal - 25)), Sols->Cond_EEP_Cal_1*(1 + Sols->Cal_1_Cond_TComp*(T_Cal - 25)), Sols->Cond_EEP_Cal_2*(1 + Sols->Cal_2_Cond_TComp*(T_Cal - 25))};
+//							float CalConds[3] = {Sols->Cond_EEP_Clean*(1 + Sols->Clean_Cond_TComp*(T_Cal - 25)), Sols->Cond_EEP_Cal_1*(1 + Sols->Cal_1_Cond_TComp*(T_Cal - 25)), Sols->Cond_EEP_Cal_2*(1 + Sols->Cal_2_Cond_TComp*(T_Cal - 25))};
+							float CalConds[3] = {Sols->Cond_EEP_Rinse*(1 + Sols->Rinse_Cond_TComp*(T_Cal - 25)), Sols->Cond_EEP_Cal_1*(1 + Sols->Cal_1_Cond_TComp*(T_Cal - 25)), Sols->Cond_EEP_Cal_2*(1 + Sols->Cal_2_Cond_TComp*(T_Cal - 25))};
 							SortArray(CalConds, 3);
 
 							float I_Low, I_Mid, I_High;
@@ -4889,32 +4881,32 @@ int main(void) {
 									}
 									else	// If low slope passed but mid slope failed must be a problem with rinse
 									{
-										if(Sols->Cond_EEP_Clean == Sols->Cond_EEP_Clean && ISEs.Config != PH_CL_CART)
-										{
-											Clean_repump = 1;
-											DEBUG_PRINT(UARTprintf("Conductivity mid slope failed, showing Clean needs to be repumped!\n");)
-										}
-										else
-										{
+//										if(Sols->Cond_EEP_Clean == Sols->Cond_EEP_Clean && ISEs.Config != PH_CL_CART)
+//										{
+//											Clean_repump = 1;
+//											DEBUG_PRINT(UARTprintf("Conductivity mid slope failed, showing Clean needs to be repumped!\n");)
+//										}
+//										else
+//										{
 											Rinse_repump = 1;
 											DEBUG_PRINT(UARTprintf("Conductivity mid slope failed, showing Rinse needs to be repumped!\n");)
-										}
+//										}
 									}
 								}
 								if(CalConductivitySlopeHigh < COND_SLOPE_3_LOW || CalConductivitySlopeHigh > COND_SLOPE_3_HIGH)	// If conductivity high slope failed calibration
 								{
 									if(CalConductivitySlopeMid < COND_SLOPE_2_LOW || CalConductivitySlopeMid > COND_SLOPE_2_HIGH)	// If conductivity mid slope failed calibration
 									{
-										if(Sols->Cond_EEP_Clean == Sols->Cond_EEP_Clean && ISEs.Config != PH_CL_CART)
-										{
-											Clean_repump = 1;
-											DEBUG_PRINT(UARTprintf("Conductivity mid and high slope failed, showing Clean needs to be repumped!\n");)
-										}
-										else
-										{
+//										if(Sols->Cond_EEP_Clean == Sols->Cond_EEP_Clean && ISEs.Config != PH_CL_CART)
+//										{
+//											Clean_repump = 1;
+//											DEBUG_PRINT(UARTprintf("Conductivity mid and high slope failed, showing Clean needs to be repumped!\n");)
+//										}
+//										else
+//										{
 											Rinse_repump = 1;
 											DEBUG_PRINT(UARTprintf("Conductivity mid and high slopes failed, showing Rinse needs to be repumped!\n");)
-										}
+//										}
 									}
 									else
 									{
@@ -5105,32 +5097,32 @@ int main(void) {
 									}
 									else	// If low slope passed but mid slope failed must be a problem with rinse
 									{
-										if(Sols->Cond_EEP_Clean == Sols->Cond_EEP_Clean && ISEs.Config != PH_CL_CART)
-										{
-											Clean_repump = 1;
-											DEBUG_PRINT(UARTprintf("Conductivity mid slope failed, showing Clean needs to be repumped!\n");)
-										}
-										else
-										{
+//										if(Sols->Cond_EEP_Clean == Sols->Cond_EEP_Clean && ISEs.Config != PH_CL_CART)
+//										{
+//											Clean_repump = 1;
+//											DEBUG_PRINT(UARTprintf("Conductivity mid slope failed, showing Clean needs to be repumped!\n");)
+//										}
+//										else
+//										{
 											Rinse_repump = 1;
 											DEBUG_PRINT(UARTprintf("Conductivity mid slope failed, showing Rinse needs to be repumped!\n");)
-										}
+//										}
 									}
 								}
 								if(CalConductivitySlopeHigh < COND_SLOPE_3_LOW || CalConductivitySlopeHigh > COND_SLOPE_3_HIGH)	// If conductivity high slope failed calibration
 								{
 									if(CalConductivitySlopeMid < COND_SLOPE_2_LOW || CalConductivitySlopeMid > COND_SLOPE_2_HIGH)	// If conductivity mid slope failed calibration
 									{
-										if(Sols->Cond_EEP_Clean == Sols->Cond_EEP_Clean && ISEs.Config != PH_CL_CART)
-										{
-											Clean_repump = 1;
-											DEBUG_PRINT(UARTprintf("Conductivity mid and high slope failed, showing Clean needs to be repumped!\n");)
-										}
-										else
-										{
+//										if(Sols->Cond_EEP_Clean == Sols->Cond_EEP_Clean && ISEs.Config != PH_CL_CART)
+//										{
+//											Clean_repump = 1;
+//											DEBUG_PRINT(UARTprintf("Conductivity mid and high slope failed, showing Clean needs to be repumped!\n");)
+//										}
+//										else
+//										{
 											Rinse_repump = 1;
 											DEBUG_PRINT(UARTprintf("Conductivity mid and high slopes failed, showing Rinse needs to be repumped!\n");)
-										}
+//										}
 									}
 									else
 									{

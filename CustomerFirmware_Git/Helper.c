@@ -5926,7 +5926,8 @@ void MemoryDump(uint8_t Print_as_mg_hardness, uint8_t Die_RevD)
 #ifdef CURRENT_ADJUSTED_COND
 		// Put the 3 calibrants used in the array twice each, order doesn't matter here because the array will be sorted from smallest to largest
 		// Really only need 5 points with the highest conductivity calibrant in the array once, but to make it universal have an extra spot and the last spot will be ignored after sorting
-		float CalConds[3] = {Sols->Cond_EEP_Clean*(1 + Sols->Clean_Cond_TComp*(T_Cal - 25)), Sols->Cond_EEP_Cal_1*(1 + Sols->Cal_1_Cond_TComp*(T_Cal - 25)), Sols->Cond_EEP_Cal_2*(1 + Sols->Cal_2_Cond_TComp*(T_Cal - 25))};
+//		float CalConds[3] = {Sols->Cond_EEP_Clean*(1 + Sols->Clean_Cond_TComp*(T_Cal - 25)), Sols->Cond_EEP_Cal_1*(1 + Sols->Cal_1_Cond_TComp*(T_Cal - 25)), Sols->Cond_EEP_Cal_2*(1 + Sols->Cal_2_Cond_TComp*(T_Cal - 25))};
+		float CalConds[3] = {Sols->Cond_EEP_Rinse*(1 + Sols->Rinse_Cond_TComp*(T_Cal - 25)), Sols->Cond_EEP_Cal_1*(1 + Sols->Cal_1_Cond_TComp*(T_Cal - 25)), Sols->Cond_EEP_Cal_2*(1 + Sols->Cal_2_Cond_TComp*(T_Cal - 25))};
 		SortArray(CalConds, 3);
 
 		float Cond_High, Cond_Low;
