@@ -71,6 +71,7 @@ struct ISEType{
 	uint8_t size;		// Number of this type of sensor
 	uint8_t index;		// Index in the length 10 arrays that hold ISE data this sensor type starts on
 	uint8_t StorBit;	// Bit in
+	uint8_t type;		// Type of sensor, used in
 };
 
 #ifdef SOLUTION_IN_STRUCT
@@ -88,6 +89,12 @@ struct SolutionVals{
 
 //extern struct SolutionsVals Sols;
 #endif
+
+#define TYPE_PH_H2	1
+#define TYPE_PH_CR	2
+#define TYPE_TH		3
+#define TYPE_NH4	4
+#define	TYPE_CA		5
 
 // Structure defining how the whole ISE die is setup.. Including solution values so this is more of a cartridge setup now...
 struct ISEConfig{
@@ -412,6 +419,7 @@ extern uint8_t Choose_NH4_Sensor(uint16_t Cal_Number, float * NH4_NH3_N_Total, f
 extern uint8_t Choose_Alk_Sensor(uint16_t Cal_Number, float * Alk_Samp, float * pH_R, float T_Rinse, uint8_t * method, float * Alk_Slope);
 #else
 #ifdef SOLUTION_IN_STRUCT
+#ifndef UNIVERSAL_PICKING_FUNCTION
 extern uint8_t Choose_pH_Sensor(uint16_t Cal_Number, float * pH_Samp, float * pH_E_Rinse, float T_Rinse, struct ISEConfig ISEs, struct SolutionVals *Sols);
 
 extern uint8_t Choose_pH_H2_Sensor(uint16_t Cal_Number, float * pH_Samp, float * pH_E_Rinse, float T_Rinse, struct ISEConfig ISEs, struct SolutionVals *Sols);
@@ -423,7 +431,10 @@ extern uint8_t Choose_Ca_Sensor(uint16_t Cal_Number, float * Ca_Hardness, float 
 extern uint8_t Choose_TH_Sensor(uint16_t Cal_Number, float * TH_corr, float * TH_R, struct ISEConfig ISEs, struct SolutionVals *Sols);
 
 extern uint8_t Choose_NH4_Sensor(uint16_t Cal_Number, float * NH4_NH3_N_Total, float * NH4_R, struct ISEConfig ISEs, struct SolutionVals *Sols);
+#else
+extern uint8_t Choose_Sensor(uint16_t Cal_Number, float * Samp_Reading, float * E_Rinse, float T_Rinse, struct ISEType ISE_Type, struct SolutionVals *Sols);
 
+#endif
 extern uint8_t Choose_Alk_Sensor(uint16_t Cal_Number, float * Alk_Samp, float * pH_R, float T_Rinse, uint8_t * method, float * Alk_Slope, struct ISEConfig ISEs, struct SolutionVals *Sols);
 
 #else

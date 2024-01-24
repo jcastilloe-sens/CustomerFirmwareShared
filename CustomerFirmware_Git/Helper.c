@@ -6393,6 +6393,9 @@ void MemoryDump(uint8_t Print_as_mg_hardness, uint8_t Die_RevD)
 		}
 
 		uint8_t T_Chosen_pH;
+
+
+#ifndef UNIVERSAL_PICKING_FUNCTION
 		if(ISEs.Config != PH_CL_CART && ISEs.Config != PH_H2_CART)
 		{
 #ifdef SOLUTION_IN_STRUCT
@@ -6403,6 +6406,10 @@ void MemoryDump(uint8_t Print_as_mg_hardness, uint8_t Die_RevD)
 		}
 		else
 			T_Chosen_pH = Choose_pH_Sensor_pHDie(Test_Cal_Number, ISE_Reading);
+#else	// UNIVERSAL_PICKING_FUNCTION
+		T_Chosen_pH = Choose_Sensor(Test_Cal_Number, pH_Cr_Samp, pH_Cr_E_Rinse, T_Rinse, ISEs.pH_Cr, Sols);
+#endif	// UNIVERSAL_PICKING_FUNCTION
+
 
 		//
 		// Ca Measurement
@@ -6525,7 +6532,11 @@ void MemoryDump(uint8_t Print_as_mg_hardness, uint8_t Die_RevD)
 
 //		uint8_t T_Chosen_Ca = Choose_Ca_Sensor(Test_Cal_Number, Ca_Hardness, Ca_E_Rinse, ISEs);
 #ifdef SOLUTION_IN_STRUCT
+#ifndef UNIVERSAL_PICKING_FUNCTION
 		uint8_t T_Chosen_Ca = Choose_Ca_Sensor(Test_Cal_Number, Ca_Hardness, Ca_E_Rinse, ISEs, Sols);
+#else	// UNIVERSAL_PICKING_FUNCTION
+		uint8_t T_Chosen_Ca = Choose_Sensor(Test_Cal_Number, Ca_Hardness, Ca_E_Rinse, T_Rinse, ISEs.Ca, Sols);
+#endif	// UNIVERSAL_PICKING_FUNCTION
 #else
 		uint8_t T_Chosen_Ca = Choose_Ca_Sensor(Test_Cal_Number, Ca_Hardness, Ca_E_Rinse, ISEs);
 #endif
@@ -6686,7 +6697,13 @@ void MemoryDump(uint8_t Print_as_mg_hardness, uint8_t Die_RevD)
 
 //		uint8_t T_Chosen_TH = Choose_TH_Sensor(Test_Cal_Number, TH_corr, TH_E_Rinse, ISEs);
 #ifdef SOLUTION_IN_STRUCT
+
+#ifndef UNIVERSAL_PICKING_FUNCTION
 		uint8_t T_Chosen_TH = Choose_TH_Sensor(Test_Cal_Number, TH_corr, TH_E_Rinse, ISEs, Sols);
+#else	// UNIVERSAL_PICKING_FUNCTION
+		uint8_t T_Chosen_TH = Choose_Sensor(Test_Cal_Number, TH_corr, TH_E_Rinse, T_Rinse, ISEs.TH, Sols);
+#endif	// UNIVERSAL_PICKING_FUNCTION
+
 #else
 		uint8_t T_Chosen_TH = Choose_TH_Sensor(Test_Cal_Number, TH_corr, TH_E_Rinse, ISEs);
 #endif
@@ -6816,7 +6833,11 @@ void MemoryDump(uint8_t Print_as_mg_hardness, uint8_t Die_RevD)
 					TH_iterated[i] = Mg_Calc + Ca_Hardness[T_Chosen_Ca];
 			}
 
+#ifndef UNIVERSAL_PICKING_FUNCTION
 			T_Chosen_TH_RR = Choose_TH_Sensor(Test_Cal_Number, TH_iterated, TH_E_Rinse, ISEs, Sols);
+#else	// UNIVERSAL_PICKING_FUNCTION
+			T_Chosen_TH_RR = Choose_Sensor(Test_Cal_Number, TH_iterated, TH_E_Rinse, T_Rinse, ISEs.TH, Sols);
+#endif	// UNIVERSAL_PICKING_FUNCTION
 		}
 
 //		float log_K_Ca_Mg_Nick = -0.2;
@@ -7032,7 +7053,11 @@ void MemoryDump(uint8_t Print_as_mg_hardness, uint8_t Die_RevD)
 //		uint8_t T_Chosen_NH4 = Choose_NH4_Sensor(Test_Cal_Number, NH4_NH3_N_Free, NH4_E_Rinse, ISEs);
 //		uint8_t T_Chosen_NH4 = Choose_NH4_Sensor(Test_Cal_Number, NH4_NH3_N_Free, NH4_E_Rinse);
 #ifdef SOLUTION_IN_STRUCT
+#ifndef UNIVERSAL_PICKING_FUNCTION
 		uint8_t T_Chosen_NH4 = Choose_NH4_Sensor(Test_Cal_Number, NH4_NH3_N_Free, NH4_E_Rinse, ISEs, Sols);
+#else	// UNIVERSAL_PICKING_FUNCTION
+		uint8_t T_Chosen_NH4 = Choose_Sensor(Test_Cal_Number, NH4_NH3_N_Free, NH4_E_Rinse, T_Rinse, ISEs.NH4, Sols);
+#endif	// UNIVERSAL_PICKING_FUNCTION
 #else
 		uint8_t T_Chosen_NH4 = Choose_NH4_Sensor(Test_Cal_Number, NH4_NH3_N_Free, NH4_E_Rinse, ISEs);
 #endif
@@ -10256,6 +10281,7 @@ uint8_t Choose_Alk_Sensor(uint16_t Cal_Number, float * Alk_Samp, float * pH_R, f
 }
 #else
 #ifdef SOLUTION_IN_STRUCT
+#ifndef UNIVERSAL_PICKING_FUNCTION
 //********************************************************************************
 // Pick which pH sensor to report, put in function so I can update in one place
 // and it updates for all version of code
@@ -11310,6 +11336,333 @@ uint8_t Choose_NH4_Sensor(uint16_t Cal_Number, float * NH4_NH3_N_Total, float * 
 	return T_Chosen_NH4;
 }
 
+#else	// UNIVERSAL_PICKING_FUNCTION
+//********************************************************************************
+// Creating a universal picking function rather than having a function for all
+// different sensor types.
+// Created: 1/9/2024
+// Inputs:	Cal_Number; Calibration used for this test, input rather than find so this can be used in MemoryDump()
+//			Samp_Reading; pointer to array holding the calculated pH values for each sensor
+//			E_Rinse; pointer to array holding the Rinse mV for each sensor, this must start at the index for this sensor type
+//			T_Rinse; Temperature of rinse during this test, needed for pH
+//			ISEs; structure holding ISE configuration data
+//			Sols; structure holding solution data, used to calculate theoretical rinse points
+// Outputs: T_Chosen; the chosen sensor
+//********************************************************************************
+uint8_t Choose_Sensor(uint16_t Cal_Number, float * Samp_Reading, float * E_Rinse, float T_Rinse, struct ISEType ISE_Type, struct SolutionVals *Sols)
+{
+	uint8_t i;
+
+	// Pull calibration data
+	uint16_t Cal_page = Find_Cal_page(Cal_Number);
+	uint32_t Cal_Status = *((uint32_t *) MemoryRead(Cal_page, OFFSET_CAL_STATUS, 4));
+	uint8_t Sensor_Cal_Status[10] = {0,0,0,0,0,0,0,0,0,0};
+	uint8_t Sensors_Passed = 0;	// Variable to count how many sensors passed calibration
+	for(i = 0; i < ISE_Type.size; i++)
+	{
+		Sensor_Cal_Status[i] = (Cal_Status >> (ISE_Type.index + 1 + i)) & 1;
+		Sensors_Passed += Sensor_Cal_Status[i];	// Cal Status will be 1 if passed, 0 if failed
+	}
+
+	uint8_t Chosen_Sensors = *(MemoryRead(Cal_page, OFFSET_CAL_CHOSEN_SENSORS, 1));
+
+	// Conditional case that the size is > 1 to avoid math error of log2(0)
+	// ((1 << ((uint8_t) log2(ISE_Type.size - 1) + 1)) - 1) This will create a bit mask for the minimum number of bits needed to save this many sensors should be compatible up to 10 spots
+	// Shift Chosen Sensor by StorBit then mask off unnecessary bits
+	uint8_t Cal_Chosen = ISE_Type.size <= 1 ? 0 : (Chosen_Sensors >> ISE_Type.StorBit) & ((1 << ((uint8_t) log2(ISE_Type.size - 1) + 1)) - 1);
+
+	uint8_t * ptr_Last_cal_passed = MemoryRead(Cal_page, OFFSET_PH_1_LAST_P_CAL, 10);
+	uint8_t Last_cal_passed[10];
+	memcpy(Last_cal_passed, ptr_Last_cal_passed, 10);
+	for(i = 0; i < 10; i++)
+		if(Last_cal_passed[i] == 0xFF)
+			Last_cal_passed[i] = Cal_Number;
+
+	// Set Test Chosen to Cal Chosen, will be changed if there is a good reason
+	uint8_t T_Chosen = Cal_Chosen;
+
+	// Set up limits to check against, default to pH_Cr values, then adjust if necessary
+	float Reading_Max = 11;	// Default value is for Cr sensor
+	float Reading_Min = 5;	// Default value is for Cr sensor
+	float linear_mV_split = 10;	// mV to compare test prerinse to theoretical cal prerinse // Default value is for Cr sensor
+	float pRinse = Calc_pH_TCor(Sols->pH_EEP_Rinse, T_Rinse, 25, 0, Sols->K_T_pH_Rinse);	// Temperature corrected pH for Rinse
+	float within = 0.05; // pH units
+
+	if(ISE_Type.type == TYPE_PH_H2)
+	{
+		Reading_Max = 11;	// H2
+		Reading_Min = 2;	// H2
+		linear_mV_split = 10;// H2 mV to compare test prerinse to theoretical cal prerinse // TH
+		// Using same pRinse and within as above
+	}
+	else if(ISE_Type.type == TYPE_TH)
+	{
+		Reading_Max = 2000;	// TH
+		Reading_Min = 5;	// TH
+		linear_mV_split = 5;// TH mV to compare test prerinse to theoretical cal prerinse // TH
+		pRinse = Calc_pTH(Sols->Ca_EEP_Rinse, Sols->TH_EEP_Rinse, -5, T_Rinse, Sols->IS_RINSE);
+		within = 10;	// ppm Total Hardness (CaCO3)
+	}
+	else if(ISE_Type.type == TYPE_NH4)
+	{
+		Reading_Max = 6;	// NH4
+		Reading_Min = -0.15;	// NH4, Negative value becasue if we assume too much sodium or potassium it can push this value negative when it's close to 0
+		linear_mV_split = 20;// NH4 mV to compare test prerinse to theoretical cal prerinse
+		pRinse = Calc_pNH4(Sols->NH4_EEP_Rinse, pRinse, 0, T_Rinse, Sols->IS_RINSE);	// NH4	// pRinse being entered is the pH TCor Rinse
+		within = 0.1;	// NH4 ppm
+	}
+	else if(ISE_Type.type == TYPE_CA)
+	{
+		Reading_Max = 1250;	// Ca (as CaCO3)
+		Reading_Min = 2;	// Ca (as CaCO3)
+		linear_mV_split = 5;// Ca mV to compare test prerinse to theoretical cal prerinse
+		pRinse = Calc_pCa(Sols->Ca_EEP_Rinse, T_Rinse, Sols->IS_RINSE);
+		within = 10;	// ppm Ca Hardness
+	}
+
+	// Calculate the theoretical rinse mV the sensor should have based on the calibration
+	float linear_mV[10];
+	for(i = 0; i < ISE_Type.size; i++)
+	{
+		float EEP_Slope = Build_float(MemoryRead(Find_Cal_page(Last_cal_passed[ISE_Type.index + i]), OFFSET_ISE_1_SLOPE + ((i + ISE_Type.index) * 4), 4));
+		float EEP_Int = Build_float(MemoryRead(Find_Cal_page(Last_cal_passed[ISE_Type.index + i]), OFFSET_ISE_1_INT + ((i + ISE_Type.index) * 4), 4));
+
+		linear_mV[i] = EEP_Slope * pRinse + EEP_Int;
+	}
+
+
+	// Choose sensor
+	if(Sensors_Passed >= 4)
+	{
+		// Count how many close sensors each sensor has and record the max
+		uint8_t CloseSensors[10] = {0,0,0,0,0,0,0,0,0,0};
+		uint8_t MaxClose = 0;
+		uint8_t j;
+		for(i = 0; i < ISE_Type.size; i++)
+		{
+			if(Sensor_Cal_Status[i])
+				for(j = 0; j < ISE_Type.size; j++)
+					if(abs_val(Samp_Reading[i] - Samp_Reading[j]) <= within && Sensor_Cal_Status[j])
+						CloseSensors[i]++;
+
+			if(CloseSensors[i] > MaxClose)
+				MaxClose = CloseSensors[i];
+		}
+
+		// After finding max, find out how many sensors matched this max
+		uint8_t MaxClose_Sensors[10] = {0,0,0,0,0,0,0,0,0,0};
+		uint8_t TotalCloseSensors = 0;
+		for(i = 0; i < ISE_Type.size; i++)
+			if(CloseSensors[i] == MaxClose)
+			{
+				MaxClose_Sensors[i] = 1;	// Set flag so each sensor that had max sensors close is set to 1 and all others are 0
+				TotalCloseSensors++;
+			}
+
+		// Create array with index values sorted from lowest to highest reading
+		uint8_t SortedSensors[10] = {0,0,0,0,0,0,0,0,0,0};
+		//	uint8_t CurrentIndex = 0;
+		for(i = 0; i < TotalCloseSensors; i++)
+		{
+			uint8_t MinIndex = 0;
+
+			for(j = 0; j < 10; j++)
+			{
+				if(MaxClose_Sensors[j] == 1)	// Sensor has the most closest readings
+				{
+					MinIndex = j;	// Set the min index to first sensor found with the most closest readings
+					break;	// break out of for loop after finding first one
+				}
+			}
+
+			for(j = 0; j < 10; j++)
+			{
+				if(MaxClose_Sensors[j] == 1 && Samp_Reading[j] < Samp_Reading[MinIndex])	// Sensor has the most closest readings and it's reading is less than the previous MinIndex
+					MinIndex = j;
+			}
+
+			MaxClose_Sensors[MinIndex] = 0;	// Clear flag indicating this reading has been added to sorted readings array
+			SortedSensors[i] = MinIndex;
+		}
+
+		// Set the chosen sensor as the median sensor from the tight group
+		if(TotalCloseSensors % 2 == 0)	// If an even number, divide by 2 and subtract 1 to find the index to return
+			T_Chosen = SortedSensors[TotalCloseSensors / 2 - 1];
+		else
+			T_Chosen = SortedSensors[TotalCloseSensors / 2];
+	}
+
+	if(Sensors_Passed == 3)	// Not using else if in case a sensor gets disqualified above
+	{
+		// Find Min and Max Indexes
+		uint8_t max_index = 0xFF;	// Set outside our range to identify if a sensor has been picked yet or not
+		uint8_t min_index = 0xFF;	// Set outside our range to identify if a sensor has been picked yet or not
+		for(i = 0; i < ISE_Type.size; i++)
+		{
+			if(Sensor_Cal_Status[i])	// Skip over sensors that didn't pass calibration
+			{
+				if(max_index == 0xFF)	// If we haven't already set a max and sensor passed calibration
+					max_index = i;
+				if(min_index == 0xFF)	// If we haven't already set a min and sensor passed calibration
+					min_index = i;
+				if(Samp_Reading[i] > Samp_Reading[max_index])	// Check if this sensor passed and is greater than reading in current max index
+					max_index = i;
+				if(Samp_Reading[i] < Samp_Reading[min_index])	// Check if this sensor passed and is greater than reading in current max index
+					min_index = i;
+			}
+		}
+
+		// Find Mid Index
+		uint8_t mid_index = 0xFF;
+		for(i = 0; i < ISE_Type.size; i++)
+		{
+			if(Sensor_Cal_Status[i] && i != max_index && i != min_index)	// Look for the sensor that passed calibration and isn't already one of our indexes
+			{
+				mid_index = i;
+				break;	// Leave for loop once we find the mid index
+			}
+		}
+
+		if(abs_val(Samp_Reading[max_index] - Samp_Reading[min_index]) < within) 	// All three points read close to each other, go with chosen from calibration
+			T_Chosen = Cal_Chosen;
+		else if(abs_val(Samp_Reading[max_index] - Samp_Reading[mid_index]) < within || abs_val(Samp_Reading[mid_index] - Samp_Reading[min_index]) < within)	// Two sensors are close to each other but the third isn't
+		{
+			// Figure out which two are close to each other and set those indicies in min and max variables
+			if(abs_val(Samp_Reading[max_index] - Samp_Reading[mid_index]) < within)
+				min_index = mid_index;
+			else
+				max_index = mid_index;
+
+			// If one of the two close sensors was the chosen sensor from calibration go with that sensor
+			if(min_index == Cal_Chosen || max_index == Cal_Chosen)
+				T_Chosen = Cal_Chosen;
+			else // Chosen sensor from calibration is not one of the two sensors close to each other
+			{
+				// Shouldn't matter too much as these sensors are close to each other, pick the one with less drift in prerinse
+				if(abs_val(E_Rinse[min_index] - linear_mV[min_index]) < abs_val(E_Rinse[max_index] - linear_mV[max_index]))
+					T_Chosen = min_index;
+				else
+					T_Chosen = max_index;
+			}
+		}
+		else	// The spread between the three points is greater than check, check rinse mV and readings
+		{
+			for(i = 0; i < ISE_Type.size; i++)	// Try to remove any sensors based on rinse mV
+			{
+				if(Sensor_Cal_Status[i])	// Skip over sensors that aren't calibrated
+				{
+					// If rinse mV isn't close or sensor read outside our range disqualify the sensor
+					if((abs_val(E_Rinse[i] - linear_mV[i]) > linear_mV_split) || (Samp_Reading[i] > Reading_Max || Samp_Reading[i] < Reading_Min))
+					{
+						Sensor_Cal_Status[i] = 0;
+						Sensors_Passed--;	// Reduce count of sensors passed, use the if statements below to handle 2 or less sensors cases
+					}
+				}
+			}
+
+			if((Sensor_Cal_Status[min_index] + Sensor_Cal_Status[mid_index] + Sensor_Cal_Status[max_index]) == 3) // All three sensors passed rinse check and were within reading range of our device
+			{
+				float Differences[3];
+				Differences[0] = abs_val(Samp_Reading[min_index] - Samp_Reading[mid_index]);
+				Differences[1] = abs_val(Samp_Reading[min_index] - Samp_Reading[max_index]);
+				Differences[2] = abs_val(Samp_Reading[mid_index] - Samp_Reading[max_index]);
+
+				uint8_t Min_diff = 0;
+				for(i = 1; i < 3; i++)
+					if(Differences[Min_diff] > Differences[i])
+						Min_diff = i;
+
+				if(Min_diff == 0)	// Smallest split is between sensors 1 and 2
+				{
+					if(abs_val(E_Rinse[min_index] - linear_mV[min_index]) < abs_val(E_Rinse[mid_index] - linear_mV[mid_index]))
+						T_Chosen = min_index;
+					else
+						T_Chosen = mid_index;
+				}
+				else if(Min_diff == 1)	// Smallest split is between sensors 1 and 3
+				{
+					if(abs_val(E_Rinse[min_index] - linear_mV[min_index]) < abs_val(E_Rinse[max_index] - linear_mV[max_index]))
+						T_Chosen = min_index;
+					else
+						T_Chosen = max_index;
+				}
+				else	// Smallest split is between sensors 2 and 3
+				{
+					if(abs_val(E_Rinse[mid_index] - linear_mV[mid_index]) < abs_val(E_Rinse[max_index] - linear_mV[max_index]))
+						T_Chosen = mid_index;
+					else
+						T_Chosen = max_index;
+				}
+			}
+		}
+	}
+
+	if(Sensors_Passed == 2)	// Not using else if in case a sensor gets disqualified above
+	{
+		// Pick out the two spots that passed calibration
+		uint8_t spot_1 = 0xFF;
+		uint8_t spot_2 = 0xFF;
+		for(i = 0; i < ISE_Type.size; i++)
+			if(Sensor_Cal_Status[i] == 1)
+				if(spot_1 == 0xFF)
+					spot_1 = i;
+				else
+					spot_2 = i;
+
+		if(abs_val(Samp_Reading[spot_1] - Samp_Reading[spot_2]) < within)	// pH sensors are close to each other
+		{
+			if(Cal_Chosen == spot_1 || Cal_Chosen == spot_2)	// If the calibration chosen sensor was one that passed go with that sensor
+				T_Chosen = Cal_Chosen;
+			else // Calibration chosen sensor failed rinse check
+			{
+				if(abs_val(E_Rinse[spot_1] - linear_mV[spot_1]) < abs_val(E_Rinse[spot_2] - linear_mV[spot_2]))
+					T_Chosen = spot_1;
+				else
+					T_Chosen = spot_2;
+			}
+		}
+		else	// Sensors did not read close to each other, check if rinse value is close to what it should be (looking for obvious rinse bubble)
+		{
+			if(abs_val(E_Rinse[spot_1] - linear_mV[spot_1]) > linear_mV_split && abs_val(E_Rinse[spot_2] - linear_mV[spot_2]) < linear_mV_split) // If sensor 1 read off theoretical rinse, but sensor 2 was close use sensor 2
+				T_Chosen = spot_2;
+			else if(abs_val(E_Rinse[spot_1] - linear_mV[spot_1]) < linear_mV_split && abs_val(E_Rinse[spot_2] - linear_mV[spot_2]) > linear_mV_split) // If sensor 2 read off theoretical rinse, but sensor 1 was close use sensor 1
+				T_Chosen = spot_1;
+			else	// If both sensors read close to their theoretical rinse value
+			{
+				if((Samp_Reading[spot_1] > Reading_Max || Samp_Reading[spot_1] < Reading_Min) && (Samp_Reading[spot_2] <= Reading_Max && Samp_Reading[spot_2] >= Reading_Min)) // if sensor 1 read outside our reading range but sensor 2 read inside pick sensor 2
+					T_Chosen = spot_2;
+				else if((Samp_Reading[spot_1] <= Reading_Max && Samp_Reading[spot_1] >= Reading_Min) && (Samp_Reading[spot_2] > Reading_Max || Samp_Reading[spot_2] < Reading_Min)) // if sensor 2 read outside our reading range but sensor 1 read inside pick sensor 1
+					T_Chosen = spot_1;
+				else	// pH sensors did not read close to each other, both rinse checks passed or failed, both are inside or outside readable range // TODO: Here is where I would add stability
+				{
+					if(Cal_Chosen == spot_1 || Cal_Chosen == spot_2)	// If the calibration chosen sensor was one that passed go with that sensor
+						T_Chosen = Cal_Chosen;
+					else // Calibration chosen sensor failed rinse check
+					{
+						if(abs_val(E_Rinse[spot_1] - linear_mV[spot_1]) < abs_val(E_Rinse[spot_2] - linear_mV[spot_2]))
+							T_Chosen = spot_1;
+						else
+							T_Chosen = spot_2;
+					}
+				}
+			}
+		}
+	}
+
+	if(Sensors_Passed <= 1)	// Not using else if in case a sensor gets disqualified above
+	{
+		for(i = 0; i < ISE_Type.size; i++)
+			if(Sensor_Cal_Status[i])
+			{
+				T_Chosen = i;	// Choose the sensor that passed calibration
+				break;	// Leave for loop once sensor has been found
+			}
+	}
+
+	return T_Chosen;
+}
+#endif // UNIVERSAL_PICKING_FUNCTION
+
 //********************************************************************************
 // Pick which Alk sensor to report, put in function so I can update in one place
 // and it updates for all version of code
@@ -11804,6 +12157,7 @@ uint8_t Choose_Alk_Sensor(uint16_t Cal_Number, float * Alk_Samp, float * pH_R, f
 
 	return T_Chosen_Alk;
 }
+
 #else
 //********************************************************************************
 // Pick which pH sensor to report, put in function so I can update in one place
@@ -14216,6 +14570,12 @@ void FillISEStruct(struct ISEConfig *ISEConfig)
 	ISEConfig->TH.StorBit = 2;
 	ISEConfig->NH4.StorBit = 3;
 	ISEConfig->Ca.StorBit = 4;
+
+	ISEConfig->pH_H2.type = TYPE_PH_H2;
+	ISEConfig->pH_Cr.type = TYPE_PH_CR;
+	ISEConfig->TH.type = TYPE_TH;
+	ISEConfig->NH4.type = TYPE_NH4;
+	ISEConfig->Ca.type = TYPE_CA;
 
 	switch (ISEConfig->Config) {
 	case ORIGINAL_CART:
