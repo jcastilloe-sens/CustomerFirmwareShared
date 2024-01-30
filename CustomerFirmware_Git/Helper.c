@@ -6280,7 +6280,7 @@ void MemoryDump(uint8_t Print_as_mg_hardness, uint8_t Die_RevD)
 						I_Low = 10.76 * 0.795;	// Average from circuits before ARV1_0B
 
 					if(Conductivity_Raw < 1000)
-						Conductivity = Conductivity_Raw - (CalConductivityKLow * 1000000) / CalConductivitySlopeLow;
+						Conductivity = (Conductivity_Raw - CalConductivityKLow * 1000000) / CalConductivitySlopeLow;
 					else
 						Conductivity = (I_Low / Conductivity_Raw - CalConductivityKLow) * 1000000 / CalConductivitySlopeLow;
 				}
@@ -6292,7 +6292,7 @@ void MemoryDump(uint8_t Print_as_mg_hardness, uint8_t Die_RevD)
 						I_Mid = 19.89 * 0.8;	// Average from circuits before ARV1_0B
 
 					if(Conductivity_Raw < 1000)
-						Conductivity = Conductivity_Raw - (CalConductivityKMid * 1000000) / CalConductivitySlopeMid;
+						Conductivity = (Conductivity_Raw - CalConductivityKMid * 1000000) / CalConductivitySlopeMid;
 					else
 						Conductivity = (I_Mid / Conductivity_Raw - CalConductivityKMid) * 1000000 / CalConductivitySlopeMid;
 				}
@@ -6304,7 +6304,7 @@ void MemoryDump(uint8_t Print_as_mg_hardness, uint8_t Die_RevD)
 						I_High = 43.57 * .812;	// Average from circuits before ARV1_0B
 
 					if(Conductivity_Raw < 1000)
-						Conductivity = Conductivity_Raw - (CalConductivityKHigh * 1000000) / CalConductivitySlopeHigh;
+						Conductivity = (Conductivity_Raw - CalConductivityKHigh * 1000000) / CalConductivitySlopeHigh;
 					else
 						Conductivity = (I_High / Conductivity_Raw - CalConductivityKHigh) * 1000000 / CalConductivitySlopeHigh;
 				}

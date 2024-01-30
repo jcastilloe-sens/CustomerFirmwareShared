@@ -333,8 +333,9 @@
 //			when deciding how big of buffer primes to do as well as display the cal data over the BT more quickly also removes the second set of calibration math so it all happens in one place
 //		V01.03.15: Created 12/20/2023: Added support for disinfection cartridge, the choosing functions for pH and NH4 need to be updated, currently it will only pick out of the first 3 spots not 6 and 4 like it could
 //			1/8/2024: Added update_Cartridge_Status call after rewriting expiration date so BT is updated immediately, added wrapper around CleanAmps function to skip the whole thing if abort error
-//		1/22/2024: Using Rinse as the middle point for the conductivity calibration, found it is more consistent than Clean
 //		V01.03.16: Created 1/10/2024: Changed to a universal choosing function for the ISEs, updated to be compatible with disinfection cartridge
+//		V01.03.17: Created 1/22/2024: Using Rinse as the middle point for the conductivity calibration, found it is more consistent than Clean
+//		V01.03.18: Created 1/30/2024: Moved all parameter calculations and saving to when they are measured so they can be reported in app ASAP
 //*****************************************************************************
 #include <stdio.h>
 #include <stdint.h>
@@ -2389,6 +2390,9 @@ int main(void) {
 				if((gui32Error & ABORT_ERRORS) != 0)
 					break;
 
+				if(solution + 2 < OPERATION_CAL_POSTCHECK)
+					update_Status(STATUS_CALIBRATION, solution + 2);
+
 				// Putting it in a switch here inside a for loop so I can change the order for different configurations
 #ifdef VALVE_STRUCT
 				if(Cal_Order[solution] == V_CAL_2)
@@ -2406,7 +2410,7 @@ int main(void) {
 					if((gui32Error & ABORT_ERRORS) == 0)
 					{
 //						update_Status(STATUS_CALIBRATION, OPERATION_CAL_2);
-						update_Status(STATUS_CALIBRATION, solution + 2);
+//						update_Status(STATUS_CALIBRATION, solution + 2);
 #ifdef PRINT_UART
 						if(Sols->pH_EEP_Cal_2 < 9 && Sols->Ca_EEP_Cal_2 < 400)
 							DEBUG_PRINT(UARTprintf("Pumping Cal 5... \n");)
@@ -2750,7 +2754,7 @@ int main(void) {
 					if((gui32Error & ABORT_ERRORS) == 0)
 					{
 //						update_Status(STATUS_CALIBRATION,OPERATION_CAL_RINSE);
-						update_Status(STATUS_CALIBRATION, solution + 2);
+//						update_Status(STATUS_CALIBRATION, solution + 2);
 						DEBUG_PRINT(UARTprintf("Pumping Prerinse... \n");)
 
 						if(PRIME_POUCH_TUBES && (Cal_Number == 1 || PrimePouchTubes == 1))
@@ -2981,7 +2985,7 @@ int main(void) {
 					if(ISEs.Config == PH_CL_CART)
 					{
 //						update_Status(STATUS_CALIBRATION, OPERATION_FCL_ACTIVATION);
-						update_Status(STATUS_CALIBRATION, solution + 2);
+//						update_Status(STATUS_CALIBRATION, solution + 2);
 
 						if(REF_DRIFT != 0 && SATURATED_KCL_REF != 0)
 							Ref_drift = Calculate_Ref_Drift(SATURATED_KCL_REF, T_Rinse);
@@ -3042,7 +3046,7 @@ int main(void) {
 								if((gui32Error & ABORT_ERRORS) == 0)
 								{
 //									update_Status(STATUS_CALIBRATION, OPERATION_FCL_ACTIVATION);
-									update_Status(STATUS_CALIBRATION, solution + 2);
+//									update_Status(STATUS_CALIBRATION, solution + 2);
 									DEBUG_PRINT(UARTprintf("Pumping Clean... \n");)
 
 									if(PRIME_POUCH_TUBES && (Cal_Number == 1 || PrimePouchTubes == 1))
@@ -3406,7 +3410,7 @@ int main(void) {
 					if((gui32Error & ABORT_ERRORS) == 0)
 					{
 //						update_Status(STATUS_CALIBRATION, OPERTAION_CAL_1);
-						update_Status(STATUS_CALIBRATION, solution + 2);
+//						update_Status(STATUS_CALIBRATION, solution + 2);
 #ifdef PRINT_UART
 						if(Sols-> Ca_EEP_Cal_1 == 0)
 							DEBUG_PRINT(UARTprintf("Pumping Cal 6...\n");)
@@ -4391,25 +4395,50 @@ int main(void) {
 							int16_t Slope_Percent = (float) ((pH_H2_Slope_CalT[L_pH_H2_Chosen] * (25.0 + 273.0)/(T_Cal + 273.0)) * 10000.0 / -59.9);	// Temperature correct slope to 25 then calculate it's percentage of theory
 							MemoryWrite(Cal_page, OFFSET_ALK_SLOPE_PER, 2, (uint8_t *) &Slope_Percent);
 						}
+						else
+						{
+							uint16_t empty = 0xFFFF;
+							MemoryWrite(Cal_page, OFFSET_ALK_SLOPE_PER, 2, (uint8_t *) &empty);
+						}
 						if(ISEs.pH_Cr.size > 0)
 						{
 							int16_t Slope_Percent = (float) ((pH_Cr_Slope_CalT[L_pH_Cr_Chosen] * (25.0 + 273.0)/(T_Cal + 273.0)) * 10000.0 / -59.9);	// Temperature correct slope to 25 then calculate it's percentage of theory
 							MemoryWrite(Cal_page, OFFSET_PH_SLOPE_PER, 2, (uint8_t *) &Slope_Percent);
+						}
+						else
+						{
+							uint16_t empty = 0xFFFF;
+							MemoryWrite(Cal_page, OFFSET_ALK_SLOPE_PER, 2, (uint8_t *) &empty);
 						}
 						if(ISEs.TH.size > 0)
 						{
 							int16_t Slope_Percent = (float) ((TH_Slope_CalT[L_TH_Chosen] * (25.0 + 273.0)/(T_Cal + 273.0)) * 10000.0 / -29.5);	// Temperature correct slope to 25 then calculate it's percentage of theory
 							MemoryWrite(Cal_page, OFFSET_MG_SLOPE_PER, 2, (uint8_t *) &Slope_Percent);
 						}
+						else
+						{
+							uint16_t empty = 0xFFFF;
+							MemoryWrite(Cal_page, OFFSET_ALK_SLOPE_PER, 2, (uint8_t *) &empty);
+						}
 						if(ISEs.NH4.size > 0)
 						{
 							int16_t Slope_Percent = (float) ((NH4_Slope_CalT[L_NH4_Chosen] * (25.0 + 273.0)/(T_Cal + 273.0)) * 10000.0 / -59.9);	// Temperature correct slope to 25 then calculate it's percentage of theory
 							MemoryWrite(Cal_page, OFFSET_NH4_SLOPE_PER, 2, (uint8_t *) &Slope_Percent);
 						}
+						else
+						{
+							uint16_t empty = 0xFFFF;
+							MemoryWrite(Cal_page, OFFSET_ALK_SLOPE_PER, 2, (uint8_t *) &empty);
+						}
 						if(ISEs.Ca.size > 0)
 						{
 							int16_t Slope_Percent = (float) ((Ca_Slope_CalT[L_Ca_Chosen] * (25.0 + 273.0)/(T_Cal + 273.0)) * 10000.0 / -29.5);	// Temperature correct slope to 25 then calculate it's percentage of theory
 							MemoryWrite(Cal_page, OFFSET_CA_SLOPE_PER, 2, (uint8_t *) &Slope_Percent);
+						}
+						else
+						{
+							uint16_t empty = 0xFFFF;
+							MemoryWrite(Cal_page, OFFSET_ALK_SLOPE_PER, 2, (uint8_t *) &empty);
 						}
 
 						// Calculate the conductivity slope percentage
@@ -7468,7 +7497,7 @@ int main(void) {
 			{
 				uint8_t j;
 				uint32_t Clear_mem = 0xFFFFFFFF;
-				for(j = 0; j < 32; j++)
+				for(j = 0; j < 64; j++)
 				{
 					MemoryWrite(Test_page + i, (j * 4), 4, (uint8_t *) &Clear_mem);
 				}
@@ -7574,6 +7603,9 @@ int main(void) {
 				uint8_t Device_Serial[8];
 				EEPROMRead((uint32_t *) Device_Serial, OFFSET_SERIAL_NUMBER, 8);
 				MemoryWrite(Test_page, OFFSET_TEST_DEVICE_SERIAL, 7, Device_Serial);
+
+				MemoryWrite(Test_page, OFFSET_TEST_DATA_ZERO, 1, &Zero);
+				MemoryWrite(Test_page, OFFSET_RAW_TEST_ZERO, 1, &Zero);
 			}
 
 //			MemoryWrite(Test_page, OFFSET_START_THERM, 4, (uint8_t *) &T_Therm_S);
@@ -8321,7 +8353,7 @@ int main(void) {
 					if(Ca_Hardness[T_Chosen_Ca] < 0)
 						Ca_Hardness[T_Chosen_Ca] = 0;
 #endif
-					if(Cond_Cal_Status && ISE_Cal_Status[ISEs.Ca.index + T_Chosen_Ca] && ISEs.Ca.size > 0)
+					if(Cond_Cal_Status && ISE_Cal_Status[ISEs.Ca.index + T_Chosen_Ca] && ISE_Cal_Status[ISEs.pH_Cr.index + T_Chosen_pH] && ISEs.Ca.size > 0)
 						MemoryWrite(Test_page, OFFSET_TEST_CAL_HARDNESS, 4, (uint8_t *) &Ca_Hardness[T_Chosen_Ca]);
 
 					// Recalculate Ca_M_activity for the chosen sensor for use in the TH calculations
@@ -8398,7 +8430,7 @@ int main(void) {
 						if(Ca_ppm < 0)
 							Ca_ppm = 0;
 #endif
-						if(Cond_Cal_Status && ISE_Cal_Status[ISEs.Ca.index + T_Chosen_Ca] && ISEs.Ca.size > 0)
+						if(Cond_Cal_Status && ISE_Cal_Status[ISEs.Ca.index + T_Chosen_Ca] && ISE_Cal_Status[ISEs.pH_Cr.index + T_Chosen_pH] && ISEs.Ca.size > 0)
 							MemoryWrite(Test_page, OFFSET_TEST_CALCIUM, 4, (uint8_t *) &Ca_ppm);
 					}
 
@@ -8482,7 +8514,7 @@ int main(void) {
 					if(TH_corr[T_Chosen_TH] < 0)
 						TH_corr[T_Chosen_TH] = 0;
 #endif
-					if(Cond_Cal_Status && ISE_Cal_Status[ISEs.Ca.index + T_Chosen_Ca] && ISE_Cal_Status[ISEs.TH.index + T_Chosen_TH] && ISEs.Ca.size > 0 && ISEs.TH.size > 0)
+					if(Cond_Cal_Status && ISE_Cal_Status[ISEs.Ca.index + T_Chosen_Ca] && ISE_Cal_Status[ISEs.TH.index + T_Chosen_TH] && ISE_Cal_Status[ISEs.pH_Cr.index + T_Chosen_pH] && ISEs.Ca.size > 0 && ISEs.TH.size > 0)
 					{
 						MemoryWrite(Test_page, OFFSET_TEST_TOTAL_HARDNESS, 4, (uint8_t *) &TH_corr[T_Chosen_TH]);
 
@@ -8491,6 +8523,7 @@ int main(void) {
 
 						MemoryWrite(Test_page, OFFSET_TEST_MAGNESIUM, 4, (uint8_t *) &Mg_ppm);
 						MemoryWrite(Test_page, OFFSET_TEST_MAG_HARDNESS, 4, (uint8_t *) &Mg_Hardness);
+						MemoryWrite(Test_page, OFFSET_TEST_LOG_K, 4, (uint8_t *) &log_K_Ca_Mg);
 					}
 
 //					if(1)	// Merely creating a small scope for variables not needed later
@@ -8557,7 +8590,7 @@ int main(void) {
 //						if(Mg_Hardness < 0)
 //							Mg_Hardness = 0;
 //#endif
-//						if(Cond_Cal_Status && ISE_Cal_Status[ISEs.Ca.index + T_Chosen_Ca] && ISE_Cal_Status[ISEs.TH.index + T_Chosen_TH])
+//						if(Cond_Cal_Status && ISE_Cal_Status[ISEs.Ca.index + T_Chosen_Ca] && ISE_Cal_Status[ISEs.TH.index + T_Chosen_TH] && ISE_Cal_Status[ISEs.pH_Cr.index + T_Chosen_pH] && ISEs.Ca.size > 0 && ISEs.TH.size > 0)
 //						{
 //							MemoryWrite(Test_page, OFFSET_TEST_MAGNESIUM, 4, (uint8_t *) &Mg_ppm);
 //							MemoryWrite(Test_page, OFFSET_TEST_MAG_HARDNESS, 4, (uint8_t *) &Mg_Hardness);
@@ -8686,7 +8719,7 @@ int main(void) {
 #endif	// UNIVERSAL_PICKING_FUNCTION
 
 #ifdef REPORT_TH_RATIO_RAMP
-						if(Cond_Cal_Status && ISE_Cal_Status[ISEs.Ca.index + T_Chosen_Ca] && ISE_Cal_Status[ISEs.TH.index + T_Chosen_TH_RR])
+						if(Cond_Cal_Status && ISE_Cal_Status[ISEs.Ca.index + T_Chosen_Ca] && ISE_Cal_Status[ISEs.TH.index + T_Chosen_TH_RR] && ISE_Cal_Status[ISEs.pH_Cr.index + T_Chosen_pH] && ISEs.Ca.size > 0 && ISEs.TH.size > 0)
 						{
 							MemoryWrite(Test_page, OFFSET_TEST_TOTAL_HARDNESS, 4, (uint8_t *) &TH_iterated[T_Chosen_TH_RR]);
 
@@ -8798,24 +8831,27 @@ int main(void) {
 					T_Chosen_NH4 = Choose_Sensor(Cal_Number, NH4_NH3_N_Free, NH4_E_Rinse, T_Rinse, ISEs.NH4, Sols);
 #endif	// UNIVERSAL_PICKING_FUNCTION
 
-
-#ifndef TESTING_MODE
 					if(NH4_NH3_N_Free[T_Chosen_NH4] < 0)
 						NH4_NH3_N_Free[T_Chosen_NH4] = 0;
-#endif
-					if(Cond_Cal_Status && ISE_Cal_Status[ISEs.NH4.index + T_Chosen_NH4] && ISE_Cal_Status[ISEs.pH_Cr.index + T_Chosen_pH] && ISEs.NH4.size > 0)
-						MemoryWrite(Test_page, OFFSET_TEST_TOTAL_NH4, 4, (uint8_t *) &NH4_NH3_N_Free[T_Chosen_NH4]);
 
-					if(1)	// Merely creating a small scope for variables I don't need later, I do need NH4_NH3_N_Free for the chosen sensor so recalculate here
+					if(MEASURE_NH4_T1 && pH_Cr_Samp_RS > 8.5)
 					{
-						float NH4_Alpha_Therm = pow(10, -pH_Cr_Samp[T_Chosen_pH]) / (pow(10, -pH_Cr_Samp[T_Chosen_pH]) + pow(10, -(0.09018 + 2729.92/T_Therm)));
-						NH4_Ammonium = NH4_NH3_N_Free[T_Chosen_NH4] * NH4_Alpha_Therm;
-#ifndef TESTING_MODE
-						if(NH4_Ammonium < 0)
-							NH4_Ammonium = 0;
-#endif
-						if(Cond_Cal_Status && ISE_Cal_Status[ISEs.NH4.index + T_Chosen_NH4] && ISEs.NH4.size > 0)
+						DEBUG_PRINT(UARTprintf("Not saving NH4 because of pH!\n");)
+					}
+					else
+					{
+						if(Cond_Cal_Status && ISE_Cal_Status[ISEs.NH4.index + T_Chosen_NH4] && ISE_Cal_Status[ISEs.pH_Cr.index + T_Chosen_pH] && ISEs.NH4.size > 0)
+						{
+							MemoryWrite(Test_page, OFFSET_TEST_TOTAL_NH4, 4, (uint8_t *) &NH4_NH3_N_Free[T_Chosen_NH4]);
+
+							float NH4_Alpha_Therm = pow(10, -pH_Cr_Samp[T_Chosen_pH]) / (pow(10, -pH_Cr_Samp[T_Chosen_pH]) + pow(10, -(0.09018 + 2729.92/T_Therm)));
+							NH4_Ammonium = NH4_NH3_N_Free[T_Chosen_NH4] * NH4_Alpha_Therm;
+
+							if(NH4_Ammonium < 0)
+								NH4_Ammonium = 0;
+
 							MemoryWrite(Test_page, OFFSET_TEST_FREE_NH4, 4, (uint8_t *) &NH4_Ammonium);
+						}
 					}
 
 //					//
@@ -8839,6 +8875,8 @@ int main(void) {
 							(T_Chosen_TH << ISEs.TH.StorBit) |
 							(T_Chosen_NH4 << ISEs.NH4.StorBit) |
 							(T_Chosen_Ca << ISEs.Ca.StorBit);
+
+					MemoryWrite(Test_page, OFFSET_CHOSEN_SENSORS, 1, &ui8TChosen_Sensors);
 
 #ifdef PRINT_UART
 					DEBUG_PRINT(UARTprintf("Calculated values:\n");)
@@ -8925,7 +8963,7 @@ int main(void) {
 
 					float PumpVol_T1[2];	// First mixing, Second mixing
 
-					if(ISEs.TH.size > 0)
+					if(Cond_Cal_Status && ISE_Cal_Status[ISEs.Ca.index + T_Chosen_Ca] && ISE_Cal_Status[ISEs.TH.index + T_Chosen_TH] && ISE_Cal_Status[ISEs.pH_Cr.index + T_Chosen_pH] && ISEs.Ca.size > 0 && ISEs.TH.size > 0)
 					{
 #ifdef REPORT_TH_RATIO_RAMP
 						if(TH_iterated[T_Chosen_TH_RR] > Conductivity * 0.2)
@@ -8946,8 +8984,10 @@ int main(void) {
 						}
 #endif
 					}
+					else if(Cond_Cal_Status)	// If we do have conductivity but not hardness, base on that
+						PumpVol_T1[0] = 0.0235 * Conductivity + 0.7969 + PumpVolRev * .050/Pump_Ratio;	// Fit model based on sodium bicarb to get to endpoint + 50 steps
 					else
-						PumpVol_T1[0] = PumpVolRev * .500/Pump_Ratio;	// If we don't have TH to start with, set half a revolution
+						PumpVol_T1[0] = PumpVolRev * .500/Pump_Ratio;	// If we don't have TH or conductivity to start with, set half a revolution
 
 					// Double check the calculations, if anythings wrong set to a max of 500 steps or min of 50 steps
 					if(PumpVol_T1[0] != PumpVol_T1[0])	// Make sure this is a number, not a NAN
@@ -9927,6 +9967,7 @@ int main(void) {
 						DEBUG_PRINT(UARTprintf("Sensor %d chosen if going off chosen Alk Sensor\n\n", (T_Chosen_Alk + 1));)
 #endif
 						ui8TChosen_Sensors |= T_Chosen_Alk << ISEs.pH_H2.StorBit;
+						MemoryWrite(Test_page, OFFSET_CHOSEN_SENSORS, 1, &ui8TChosen_Sensors);
 
 						// Store data from alkalinity
 						if(1)
@@ -9963,6 +10004,12 @@ int main(void) {
 #endif
 						if(ISE_Cal_Status[ISEs.pH_H2.index + T_Chosen_Alk] && ISEs.pH_H2.size > 0)
 							MemoryWrite(Test_page, OFFSET_TEST_ALKALINITY, 4, (uint8_t *) &Alk_Samp[T_Chosen_Alk]);
+
+						float Alk_Bicarb = (Alk_Samp[T_Chosen_Alk] - 5.0 * pow(10, (pH_Cr_Samp[T_Chosen_pH] - 10)))/(1.0 + 0.94 * pow(10, (pH_Cr_Samp[T_Chosen_pH] - 10)));
+						float CO2_Free = 2.0 * Alk_Bicarb * pow(10, 6 - pH_Cr_Samp[T_Chosen_pH]);
+
+						if(ISE_Cal_Status[ISEs.pH_H2.index + T_Chosen_Alk] && ISE_Cal_Status[ISEs.pH_Cr.index + T_Chosen_pH] && ISEs.pH_H2.size > 0 && ISEs.pH_Cr.size > 0)
+							MemoryWrite(Test_page, OFFSET_TEST_CO2, 4, (uint8_t *) &CO2_Free);
 					}
 
 					//					if(ui8Times_mixed == (MAX_TIMES_TO_MIX + 1) && ((Steps_T1_Endpoint[0] == 0 && pH_Cal_Status[0] == 1) || (Steps_T1_Endpoint[1] == 0 && pH_Cal_Status[1] == 1)  || (DIE_REV_D && Steps_T1_Endpoint[2] == 0 && pH_Cal_Status[2] == 1)))
@@ -10454,7 +10501,7 @@ int main(void) {
 					NH4_Ammonium = NH4_NH3_N_Free[T_Chosen_NH4] * NH4_alpha_Therm;
 					if(NH4_Ammonium < 0)
 						NH4_Ammonium = 0;
-					if(Cond_Cal_Status && ISE_Cal_Status[ISEs.NH4.index + T_Chosen_NH4] && ISEs.NH4.size > 0)
+					if(Cond_Cal_Status && ISE_Cal_Status[ISEs.NH4.index + T_Chosen_NH4] && ISE_Cal_Status[ISEs.pH_Cr.index + T_Chosen_pH] && ISEs.NH4.size > 0)
 						MemoryWrite(Test_page, OFFSET_TEST_FREE_NH4, 4, (uint8_t *) &NH4_Ammonium);
 				}
 			}
@@ -10672,6 +10719,64 @@ int main(void) {
 
 						if(REF_DRIFT != 0 && SATURATED_KCL_REF != 0)
 							Ref_drift = Calculate_Ref_Drift(SATURATED_KCL_REF, T_Rinse);
+
+						if(ISEs.Config == PH_CL_CART)
+						{
+							//
+							// pH Measurement
+							//
+							//					pH_TCor_Rinse = pH_EEP_Rinse + K_T_pH_Rinse * (T_RS - 25);	// Temperature corrected pH for Rinse
+							T_RS = (T_Rinse + T_Samp) / 2;
+#ifdef CAL_2_RINSE
+							pH_TCor_Rinse = Calc_pH_TCor(Sols->pH_EEP_Cal_2, T_RS, 25, 0, Sols->K_T_pH_Cal_2);
+#else
+							pH_TCor_Rinse = Calc_pH_TCor(Sols->pH_EEP_Clean, T_RS, 25, Sols->K_T_pH_Clean_Sq, Sols->K_T_pH_Clean_Ln);
+#endif
+
+							for(i = 0; i < ISEs.pH_Cr.size; i++)
+							{
+								float pH_Cr_Slope_RST = pH_Cr_EEP_Slope[i] * (T_RS + 273.0) / (T_EEP_Cal + 273.0);	// Temperature corrected slope
+								// Removed temperature correction for sample because we are assuming T_Rinse = T_Samp
+								float pH_Cr_Samp_RS = pH_TCor_Rinse + ((pH_Cr_E_Samp[i] - pH_Cr_E_Rinse[i]) / pH_Cr_Slope_RST); // pH of sample
+								if(T_Therm > 2 && T_Therm < 50)
+								{
+									pH_Cr_Samp[i] = Calc_pH_TCor(pH_Cr_Samp_RS, T_Therm, T_RS, K_T_pH_Samp_Sq, K_T_pH_Samp_Ln);
+									DEBUG_PRINT(UARTprintf("pH Cr %d, Uncorrected: %d, Corrected: %d\n", i + 1, (int) (pH_Cr_Samp_RS * 1000), (int) (pH_Cr_Samp[i] * 1000));)
+								}
+								else
+								{
+									//							DEBUG_PRINT(UARTprintf("Thermistor temp read outside acceptable range, not adjusting pH!\n");)
+									pH_Cr_Samp[i] = pH_Cr_Samp_RS;
+									gui32Error |= THERMISTOR_FAILED;
+								}
+							}
+
+							if(T_Therm < 2 || T_Therm > 50)
+								{DEBUG_PRINT(UARTprintf("Thermistor temp read outside acceptable range, not adjusting pH!\n");)}
+
+
+#ifndef UNIVERSAL_PICKING_FUNCTION
+							T_Chosen_pH = Choose_pH_Sensor_pHDie(Cal_Number, ISE_Reading);
+#else	// UNIVERSAL_PICKING_FUNCTION
+							T_Chosen_pH = Choose_Sensor(Cal_Number, pH_Cr_Samp, pH_Cr_E_Rinse, T_Rinse, ISEs.pH_Cr, Sols);
+#endif	// UNIVERSAL_PICKING_FUNCTION
+
+							if(ISE_Cal_Status[ISEs.pH_Cr.index + T_Chosen_pH] && ISEs.pH_Cr.size > 0)	// Check that chosen sensor passed calibration before reporting a number
+								MemoryWrite(Test_page, OFFSET_TEST_PH, 4, (uint8_t *) &pH_Cr_Samp[T_Chosen_pH]);
+
+							//
+							// Conductivity Temperature Correction
+							//
+							// Perform temperature correction here after calculations for ISEs so we are using the conductivity at temperature, not the adjusted conductivity
+							Conductivity /= (1 + COND_TCOMP_SAMP*(T_Samp - 25));
+
+							//
+							ui8TChosen_Sensors = T_Chosen_pH;
+							MemoryWrite(Test_page, OFFSET_CHOSEN_SENSORS, 1, &ui8TChosen_Sensors);
+
+							if(Cond_Cal_Status)
+								MemoryWrite(Test_page, OFFSET_TEST_COND, 4, (uint8_t *) &Conductivity);
+						}
 
 						if(MEASURE_FCL || MEASURE_TCL)
 						{
@@ -11073,6 +11178,8 @@ int main(void) {
 			// Create variables for Cl mixing
 			float Cl_nA_FCl = 0;
 			float Cl_nA_TCl = 0;
+			float Cl_FCl_ppm = nanf(""), Cl_TCl_ppm = nanf(""), Cl_MCl_ppm = nanf("");//, Cl_MCl_NH3 = -1;
+			float NH4_TNH3 = nanf(""), NH4_Cl_NH3 = nanf(""), /*NH4_BFR = -1*//*Nitrification_Potential = nanf("");*/Nitrification_Capacity = nanf("");
 			float T_Samp_B2 = T_assume;
 			float T_Samp_B1 = T_assume;
 			PrintTime();
@@ -11436,6 +11543,7 @@ int main(void) {
 						//								Cl_nA_FCl /= (.015 * T_Samp_B1 + .622);
 						Cl_nA_FCl /= (.013 * T_Samp_B1 + .668);	// Updated 3/16/2020
 						DEBUG_PRINT(UARTprintf("FCl raw normalized to 25C: %d nA * 1000\n", (int) ((Cl_nA_FCl) * 1000));)
+						MemoryWrite(Test_page, OFFSET_RAW_CL_FCL, 4, (uint8_t *) &Cl_nA_FCl);
 
 						//							Conductivity_B1 = MeasureConductivity(Sols->Cond_EEP_Rinse, Sols->Cond_EEP_Cal_2, 0) / (1 + COND_TCOMP_B1_MIX * (T_Samp_B1 - 25));
 #ifndef COND_SOLUTION_STRUCT
@@ -11467,6 +11575,40 @@ int main(void) {
 						{
 							gui32Error |= FCL_MIX_OUT_OF_RANGE;	// Update error
 							update_Error();
+						}
+						else
+						{
+							//
+							// Cl Measurement
+							//
+//							float Cl_FCl_ppm = nanf("");//, Cl_MCl_NH3 = -1;
+							float Cl_FCl_Int = Build_float(MemoryRead(PAGE_FACTORY_CAL, OFFSET_FCL_INT, 4));
+							float Cl_FCl_Slope = Build_float(MemoryRead(PAGE_FACTORY_CAL, OFFSET_FCL_SLOPE, 4));
+							float Cl_FCl_Int_High = Build_float(MemoryRead(PAGE_FACTORY_CAL, OFFSET_FCL_INT_HIGH, 4));
+							float Cl_FCl_Slope_High = Build_float(MemoryRead(PAGE_FACTORY_CAL, OFFSET_FCL_SLOPE_HIGH, 4));
+							float Cl_FCl_Midpoint = Cl_FCl_Slope * ((Cl_FCl_Int_High - Cl_FCl_Int) / (Cl_FCl_Slope - Cl_FCl_Slope_High)) + Cl_FCl_Int;
+
+							if(Cl_FCl_Slope != Cl_FCl_Slope || Cl_FCl_Slope_High != Cl_FCl_Slope_High)
+							{
+								Cl_FCl_Int = CL_FCL_INT;
+								Cl_FCl_Slope = CL_FCL_SLOPE;
+								Cl_FCl_Int_High = CL_FCL_INT_HIGH;
+								Cl_FCl_Slope_High = CL_FCL_SLOPE_HIGH;
+								Cl_FCl_Midpoint = Cl_FCl_Slope * ((Cl_FCl_Int_High - Cl_FCl_Int) / (Cl_FCl_Slope - Cl_FCl_Slope_High)) + Cl_FCl_Int;
+							}
+
+							if(MEASURE_FCL && (gui32Error & (FCL_MIX_OUT_OF_RANGE | CL_CLEANING_OUT_OF_RANGE)) == 0)
+							{
+								if(Cl_nA_FCl > Cl_FCl_Midpoint)
+									Cl_FCl_ppm = ((Cl_nA_FCl - Cl_FCl_Int) / Cl_FCl_Slope);//*((Steps_Sample_B1 + (float) Steps_B1) / Steps_Sample_B1); // ppm Cl2
+								else
+									Cl_FCl_ppm = ((Cl_nA_FCl - Cl_FCl_Int_High) / Cl_FCl_Slope_High);//*((Steps_Sample_B1 + (float) Steps_B1) / Steps_Sample_B1); // ppm Cl2
+
+								if(Cl_FCl_ppm < 0)
+									Cl_FCl_ppm = 0;
+
+								MemoryWrite(Test_page, OFFSET_TEST_FREE_CL, 4, (uint8_t *) &Cl_FCl_ppm);
+							}
 						}
 
 					}
@@ -11975,6 +12117,7 @@ int main(void) {
 
 						Cl_nA_TCl /= 0.014 * T_Samp_B2 + 0.654;
 						DEBUG_PRINT(UARTprintf("TCl raw normalized to 25C: %d nA * 1000\n", (int) (Cl_nA_TCl * 1000));)
+						MemoryWrite(Test_page, OFFSET_RAW_CL_TCL, 4, (uint8_t *) &Cl_nA_TCl);
 
 						//							Conductivity_B2 = MeasureConductivity(Sols->Cond_EEP_Rinse, Sols->Cond_EEP_Cal_2, 0) / (1 + COND_TCOMP_B2_MIX * (T_Samp_B2 - 25));
 #ifndef COND_SOLUTION_STRUCT
@@ -12007,6 +12150,71 @@ int main(void) {
 						{
 							gui32Error |= TCL_MIX_OUT_OF_RANGE;	// Update error
 							update_Error();
+						}
+						else
+						{
+							//
+							// Cl Measurement
+							//
+							float Cl_TCl_Slope = Build_float(MemoryRead(PAGE_FACTORY_CAL, OFFSET_TCL_SLOPE, 4));
+							float Cl_TCl_Int = Build_float(MemoryRead(PAGE_FACTORY_CAL, OFFSET_TCL_INT, 4));
+							float Cl_TCl_Slope_High = Build_float(MemoryRead(PAGE_FACTORY_CAL, OFFSET_TCL_SLOPE_HIGH, 4));
+							float Cl_TCl_Int_High = Build_float(MemoryRead(PAGE_FACTORY_CAL, OFFSET_TCL_INT_HIGH, 4));
+							float Cl_TCl_Midpoint = Cl_TCl_Slope * ((Cl_TCl_Int_High - Cl_TCl_Int) / (Cl_TCl_Slope - Cl_TCl_Slope_High)) + Cl_TCl_Int;
+
+							if(Cl_TCl_Slope_High != Cl_TCl_Slope_High || Cl_TCl_Slope != Cl_TCl_Slope)
+							{
+								Cl_TCl_Slope = CL_TCL_SLOPE;
+								Cl_TCl_Int = CL_TCL_INT;
+								Cl_TCl_Slope_High = CL_TCL_SLOPE_HIGH;
+								Cl_TCl_Int_High = CL_TCL_INT_HIGH;
+
+								Cl_TCl_Midpoint = Cl_TCl_Slope * ((Cl_TCl_Int_High - Cl_TCl_Int) / (Cl_TCl_Slope - Cl_TCl_Slope_High)) + Cl_TCl_Int;
+							}
+
+							if(MEASURE_TCL && (gui32Error & (TCL_MIX_OUT_OF_RANGE | CL_CLEANING_OUT_OF_RANGE)) == 0)
+							{
+								// 2/26/2020: Removed dilution math because dilution during calibration is same as dilution during tests
+								if(Cl_nA_TCl > Cl_TCl_Midpoint)
+									Cl_TCl_ppm = ((Cl_nA_TCl - Cl_TCl_Int) / Cl_TCl_Slope);//*((Steps_Sample_B2 + (float) Steps_B2 + (float) Steps_C2) / Steps_Sample_B2); // ppm Cl2
+								else
+									Cl_TCl_ppm = ((Cl_nA_TCl - Cl_TCl_Int_High) / Cl_TCl_Slope_High);//*((Steps_Sample_B2 + (float) Steps_B2 + (float) Steps_C2) / Steps_Sample_B2); // ppm Cl2
+
+								if(Cl_TCl_ppm < 0)
+									Cl_TCl_ppm = 0;
+
+								MemoryWrite(Test_page, OFFSET_TEST_TOTAL_CL, 4, (uint8_t *) &Cl_TCl_ppm);
+
+								if(Cl_FCl_ppm == Cl_FCl_ppm && Cl_TCl_ppm == Cl_TCl_ppm)
+								{
+									Cl_MCl_ppm = Cl_TCl_ppm - Cl_FCl_ppm; 				// ppm Cl2
+
+									if(Cl_MCl_ppm < 0)
+										Cl_MCl_ppm = 0;
+
+									MemoryWrite(Test_page, OFFSET_TEST_MONO, 4, (uint8_t *) &Cl_MCl_ppm);
+								}
+
+								if(MEASURE_FCL && MEASURE_TCL && ISEs.NH4.size > 0  && (gui32Error & (FCL_MIX_OUT_OF_RANGE | TCL_MIX_OUT_OF_RANGE | CL_CLEANING_OUT_OF_RANGE)) == 0)// && ((gui32Error & (TCL_MIX_OUT_OF_RANGE | FCL_MIX_OUT_OF_RANGE)) == 0))
+								{
+
+
+									if(Cond_Cal_Status && ISE_Cal_Status[ISEs.NH4.index + T_Chosen_NH4] && ISE_Cal_Status[ISEs.pH_Cr.index + T_Chosen_pH] && ISEs.NH4.size > 0)
+									{
+										NH4_TNH3 = NH4_NH3_N_Free[T_Chosen_NH4] + Cl_MCl_ppm * 0.1986;	// Calculate Total Ammonia
+										if(NH4_TNH3 == 0)
+											NH4_Cl_NH3 = 0;
+										else
+											NH4_Cl_NH3 = Cl_TCl_ppm / NH4_TNH3;
+
+										Nitrification_Capacity = (0.1986 * 11 * (Cl_TCl_ppm - Cl_FCl_ppm) / 10) + NH4_NH3_N_Free[T_Chosen_NH4];
+
+										MemoryWrite(Test_page, OFFSET_TEST_TOTAL_NH4_MONO, 4, (uint8_t *) &NH4_TNH3);
+										MemoryWrite(Test_page, OFFSET_TEST_CL_NH4_RATIO, 4, (uint8_t *) &NH4_Cl_NH3);
+										MemoryWrite(Test_page, OFFSET_TEST_BFR, 4, (uint8_t *) &Nitrification_Capacity);
+									}
+								}
+							}
 						}
 					}
 
@@ -13112,370 +13320,14 @@ int main(void) {
 
 			SleepValve();
 
-//			if(STORE_IN_NITRIC)
-//			{
-//				DEBUG_PRINT(UARTprintf("Storing sensor in nitric acid!\n");)
-//				RunValveToPossition_Bidirectional(V_T1, VALVE_STEPS_PER_POSITION);
-//
-//				PumpStepperRunStepSpeed(FW, Steps_Store_1, Speed_ISE);
-//				PumpStepperRunStepSpeed(FW, Steps_Store_2, Speed_ISE);
-//				userDelay(valve_delay,0);
-//				RunValveToPossition_Bidirectional(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
-//				PumpStepperRunStepSpeed(FW, Steps_Store_air_1, Speed_ISE);
-//				PumpStepperRunStepSpeed(FW, Steps_Store_air_2, Speed_ISE);
-//
-//				RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);
-//				PumpStepperRunStepSpeed_AbortReady(FW, Steps_tube_bubble * 2, Speed_ISE);
-//				userDelay(valve_delay_after_air, 1);
-//				RunValveToPossition_Bidirectional_AbortReady(V_T1, VALVE_STEPS_PER_POSITION);
-//				PumpStepperRunStepSpeed_AbortReady(BW, Steps_tube_bubble, Speed_ISE);
-//				userDelay(valve_delay, 1);
-//
-//				SleepValve();
-//			}
-
 			if((gui32Error & ABORT_ERRORS) == 0)
 			{
-				if(ISEs.Config == PH_CL_CART)
-				{
-					//
-					// pH Measurement
-					//
-					//					pH_TCor_Rinse = pH_EEP_Rinse + K_T_pH_Rinse * (T_RS - 25);	// Temperature corrected pH for Rinse
-					T_RS = (T_Rinse + T_Samp) / 2;
-#ifdef CAL_2_RINSE
-				pH_TCor_Rinse = Calc_pH_TCor(Sols->pH_EEP_Cal_2, T_RS, 25, 0, Sols->K_T_pH_Cal_2);
-#else
-				pH_TCor_Rinse = Calc_pH_TCor(Sols->pH_EEP_Clean, T_RS, 25, Sols->K_T_pH_Clean_Sq, Sols->K_T_pH_Clean_Ln);
-#endif
-//					pH_TCor_Rinse = Calc_pH_TCor(Sols->pH_EEP_Rinse, T_RS, 25, Sols->K_T_pH_Clean_Sq, Sols->K_T_pH_Clean_Ln);
-
-					for(i = 0; i < ISEs.pH_H2.size; i++)
-					{
-						float pH_H2_Slope_RST = pH_H2_EEP_Slope[i] * (T_RS + 273.0) / (T_EEP_Cal + 273.0);	// Temperature corrected slope
-						// Removed temperature correction for sample because we are assuming T_Rinse = T_Samp
-						float pH_H2_Samp_RS = pH_TCor_Rinse + ((pH_H2_E_Samp[i] - pH_H2_E_Rinse[i]) / pH_H2_Slope_RST); // pH of sample
-						if(T_Therm > 2 && T_Therm < 50)
-						{
-							pH_H2_Samp[i] = Calc_pH_TCor(pH_H2_Samp_RS, T_Therm, T_RS, K_T_pH_Samp_Sq, K_T_pH_Samp_Ln);
-							//							pH_H2_Samp[i] = pH_H2_Samp_RS + (K_T_pH_Samp_Sq * (pow(T_Therm, 2) - pow(T_RS, 2)) + K_T_pH_Samp_Ln * (T_Therm - T_RS)); //pH_H2_Samp_RS + K_T_pH_Samp * (T_Therm - T_RS);
-							DEBUG_PRINT(UARTprintf("pH H2 %d, Uncorrected: %d, Corrected: %d\n", i + 1, (int) (pH_H2_Samp_RS * 1000), (int) (pH_H2_Samp[i] * 1000));)
-						}
-						else
-						{
-							//							DEBUG_PRINT(UARTprintf("Thermistor temp read outside acceptable range, not adjusting pH!\n");)
-							pH_H2_Samp[i] = pH_H2_Samp_RS;
-							gui32Error |= THERMISTOR_FAILED;
-						}
-					}
-
-					for(i = 0; i < ISEs.pH_Cr.size; i++)
-					{
-						float pH_Cr_Slope_RST = pH_Cr_EEP_Slope[i] * (T_RS + 273.0) / (T_EEP_Cal + 273.0);	// Temperature corrected slope
-						// Removed temperature correction for sample because we are assuming T_Rinse = T_Samp
-						float pH_Cr_Samp_RS = pH_TCor_Rinse + ((pH_Cr_E_Samp[i] - pH_Cr_E_Rinse[i]) / pH_Cr_Slope_RST); // pH of sample
-						if(T_Therm > 2 && T_Therm < 50)
-						{
-							pH_Cr_Samp[i] = Calc_pH_TCor(pH_Cr_Samp_RS, T_Therm, T_RS, K_T_pH_Samp_Sq, K_T_pH_Samp_Ln);
-							DEBUG_PRINT(UARTprintf("pH Cr %d, Uncorrected: %d, Corrected: %d\n", i + 1, (int) (pH_Cr_Samp_RS * 1000), (int) (pH_Cr_Samp[i] * 1000));)
-						}
-						else
-						{
-							//							DEBUG_PRINT(UARTprintf("Thermistor temp read outside acceptable range, not adjusting pH!\n");)
-							pH_Cr_Samp[i] = pH_Cr_Samp_RS;
-							gui32Error |= THERMISTOR_FAILED;
-						}
-					}
-
-					if(T_Therm < 2 || T_Therm > 50)
-						{DEBUG_PRINT(UARTprintf("Thermistor temp read outside acceptable range, not adjusting pH!\n");)}
-
-
-#ifndef UNIVERSAL_PICKING_FUNCTION
-					T_Chosen_pH = Choose_pH_Sensor_pHDie(Cal_Number, ISE_Reading);
-#else	// UNIVERSAL_PICKING_FUNCTION
-					T_Chosen_pH = Choose_Sensor(Cal_Number, pH_Cr_Samp, pH_Cr_E_Rinse, T_Rinse, ISEs.pH_Cr, Sols);
-#endif	// UNIVERSAL_PICKING_FUNCTION
-
-					if(ISE_Cal_Status[ISEs.pH_Cr.index + T_Chosen_pH] && ISEs.pH_Cr.size > 0)	// Check that chosen sensor passed calibration before reporting a number
-						MemoryWrite(Test_page, OFFSET_TEST_PH, 4, (uint8_t *) &pH_Cr_Samp[T_Chosen_pH]);
-
-					//
-					// Conductivity Temperature Correction
-					//
-					// Perform temperature correction here after calculations for ISEs so we are using the conductivity at temperature, not the adjusted conductivity
-					Conductivity /= (1 + COND_TCOMP_SAMP*(T_Samp - 25));
-
-					//
-					ui8TChosen_Sensors = T_Chosen_pH;
-
-					if(Cond_Cal_Status)
-						MemoryWrite(Test_page, OFFSET_TEST_COND, 4, (uint8_t *) &Conductivity);
-				}
-
-				//
-				// Cl Measurement
-				//
-				float Cl_FCl_ppm = nanf(""), Cl_TCl_ppm = nanf(""), Cl_MCl_ppm = nanf("");//, Cl_MCl_NH3 = -1;
-				float Cl_TCl_Slope = Build_float(MemoryRead(PAGE_FACTORY_CAL, OFFSET_TCL_SLOPE, 4));
-				float Cl_TCl_Int = Build_float(MemoryRead(PAGE_FACTORY_CAL, OFFSET_TCL_INT, 4));
-				float Cl_FCl_Int = Build_float(MemoryRead(PAGE_FACTORY_CAL, OFFSET_FCL_INT, 4));
-				float Cl_FCl_Slope = Build_float(MemoryRead(PAGE_FACTORY_CAL, OFFSET_FCL_SLOPE, 4));
-				float Cl_TCl_Slope_High = Build_float(MemoryRead(PAGE_FACTORY_CAL, OFFSET_TCL_SLOPE_HIGH, 4));
-				float Cl_TCl_Int_High = Build_float(MemoryRead(PAGE_FACTORY_CAL, OFFSET_TCL_INT_HIGH, 4));
-				float Cl_FCl_Int_High = Build_float(MemoryRead(PAGE_FACTORY_CAL, OFFSET_FCL_INT_HIGH, 4));
-				float Cl_FCl_Slope_High = Build_float(MemoryRead(PAGE_FACTORY_CAL, OFFSET_FCL_SLOPE_HIGH, 4));
-				//				float Cl_TCl_Midpoint = Build_float(MemoryRead(PAGE_FACTORY_CAL, OFFSET_TCL_MID_POINT, 4));
-				//				float Cl_FCl_Midpoint = Build_float(MemoryRead(PAGE_FACTORY_CAL, OFFSET_FCL_MID_POINT, 4));
-				float Cl_TCl_Midpoint = Cl_TCl_Slope * ((Cl_TCl_Int_High - Cl_TCl_Int) / (Cl_TCl_Slope - Cl_TCl_Slope_High)) + Cl_TCl_Int;
-				float Cl_FCl_Midpoint = Cl_FCl_Slope * ((Cl_FCl_Int_High - Cl_FCl_Int) / (Cl_FCl_Slope - Cl_FCl_Slope_High)) + Cl_FCl_Int;
-
-				if(Cl_TCl_Slope != Cl_TCl_Slope)
-				{
-					Cl_TCl_Slope = -65.987;
-					Cl_TCl_Int = -7.547;
-					Cl_FCl_Int = -1.625;
-					Cl_FCl_Slope = -40.592;
-				}
-
-				if(Cl_TCl_Slope_High != Cl_TCl_Slope_High)
-				{
-					Cl_TCl_Slope_High = -74.374;
-					Cl_TCl_Int_High = -4.779;
-					Cl_FCl_Int_High = 8.388;
-					Cl_FCl_Slope_High = -70.932;
-
-					Cl_TCl_Midpoint = Cl_TCl_Slope * ((Cl_TCl_Int_High - Cl_TCl_Int) / (Cl_TCl_Slope - Cl_TCl_Slope_High)) + Cl_TCl_Int;
-					Cl_FCl_Midpoint = Cl_FCl_Slope * ((Cl_FCl_Int_High - Cl_FCl_Int) / (Cl_FCl_Slope - Cl_FCl_Slope_High)) + Cl_FCl_Int;
-				}
-
-				DEBUG_PRINT(UARTprintf("Chlorine slopes:\n");)
-				DEBUG_PRINT(UARTprintf("\tLow Slope\tLow Int\tHigh Slope\tHigh Int\n");)
-				DEBUG_PRINT(UARTprintf("FCl\t%d\t%d\t%d\t%d\n", (int) (Cl_FCl_Slope * 1000), (int) (Cl_FCl_Int * 1000), (int) (Cl_FCl_Slope_High * 1000), (int) (Cl_FCl_Int_High * 1000));)
-				DEBUG_PRINT(UARTprintf("TCl\t%d\t%d\t%d\t%d\n", (int) (Cl_TCl_Slope * 1000), (int) (Cl_TCl_Int * 1000), (int) (Cl_TCl_Slope_High * 1000), (int) (Cl_TCl_Int_High * 1000));)
-				DEBUG_PRINT(UARTprintf("FCl midpoint: %d nA * 1000\n", (int) (Cl_FCl_Midpoint * 1000));)
-				DEBUG_PRINT(UARTprintf("TCl midpoint: %d nA * 1000\n", (int) (Cl_TCl_Midpoint * 1000));)
-
-				if(MEASURE_FCL && (gui32Error & (FCL_MIX_OUT_OF_RANGE | CL_CLEANING_OUT_OF_RANGE)) == 0)
-				{
-					if(Cl_nA_FCl > Cl_FCl_Midpoint)
-						Cl_FCl_ppm = ((Cl_nA_FCl - Cl_FCl_Int) / Cl_FCl_Slope);//*((Steps_Sample_B1 + (float) Steps_B1) / Steps_Sample_B1); // ppm Cl2
-					else
-						Cl_FCl_ppm = ((Cl_nA_FCl - Cl_FCl_Int_High) / Cl_FCl_Slope_High);//*((Steps_Sample_B1 + (float) Steps_B1) / Steps_Sample_B1); // ppm Cl2
-
-					if(Cl_FCl_ppm < 0)
-						Cl_FCl_ppm = 0;
-				}
-
-				if(MEASURE_TCL && (gui32Error & (TCL_MIX_OUT_OF_RANGE | CL_CLEANING_OUT_OF_RANGE)) == 0)
-				{
-					// 2/26/2020: Removed dilution math because dilution during calibration is same as dilution during tests
-					if(Cl_nA_TCl > Cl_TCl_Midpoint)
-						Cl_TCl_ppm = ((Cl_nA_TCl - Cl_TCl_Int) / Cl_TCl_Slope);//*((Steps_Sample_B2 + (float) Steps_B2 + (float) Steps_C2) / Steps_Sample_B2); // ppm Cl2
-					else
-						Cl_TCl_ppm = ((Cl_nA_TCl - Cl_TCl_Int_High) / Cl_TCl_Slope_High);//*((Steps_Sample_B2 + (float) Steps_B2 + (float) Steps_C2) / Steps_Sample_B2); // ppm Cl2
-
-					if(Cl_TCl_ppm < 0)
-						Cl_TCl_ppm = 0;
-
-					// TODO: Change logic to make sure FCl and TCl are valid relative to each other, turned off for testing
-					//					if(MEASURE_FCL && Cl_TCl_ppm < Cl_FCl_ppm)
-					//						Cl_FCl_ppm = Cl_TCl_ppm;	// TCl is more accurate than FCl so set to match TCl if FCl is higher TODO: revisit this assumption, is FCl more accurate now? which has worst first point problem
-
-					if(MEASURE_FCL)//&& ((gui32Error & FCL_MIX_OUT_OF_RANGE) == 0)) // TODO: Put back in check
-					{
-						Cl_MCl_ppm = Cl_TCl_ppm - Cl_FCl_ppm; 				// ppm Cl2
-						//						Cl_MCl_NH3 = Cl_MCl_ppm * 14.0 / 70.9;				// ppm NH3
-
-						if(Cl_MCl_ppm < 0)
-							Cl_MCl_ppm = 0;
-
-						MemoryWrite(Test_page, OFFSET_TEST_MONO, 4, (uint8_t *) &Cl_MCl_ppm);
-					}
-				}
-
-				float NH4_TNH3 = nanf(""), NH4_Cl_NH3 = nanf(""), /*NH4_BFR = -1*//*Nitrification_Potential = nanf("");*/Nitrification_Capacity = nanf("");
-				if(MEASURE_FCL && MEASURE_TCL && ISEs.NH4.size > 0  && (gui32Error & (FCL_MIX_OUT_OF_RANGE | TCL_MIX_OUT_OF_RANGE | CL_CLEANING_OUT_OF_RANGE)) == 0)// && ((gui32Error & (TCL_MIX_OUT_OF_RANGE | FCL_MIX_OUT_OF_RANGE)) == 0))
-				{
-					//					if(pH_Cr_Samp[T_Chosen_pH] < 8.5 || NH4_NH3_N_Free_T1[T_Chosen_NH4] == -1)
-					//					{
-					NH4_TNH3 = NH4_NH3_N_Free[T_Chosen_NH4] + Cl_MCl_ppm * 0.1986;
-					if(NH4_TNH3 == 0)
-						NH4_Cl_NH3 = 0;
-					else
-						NH4_Cl_NH3 = Cl_TCl_ppm / NH4_TNH3;
-
-					Nitrification_Capacity = (0.1986 * 11 * (Cl_TCl_ppm - Cl_FCl_ppm) / 10) + NH4_NH3_N_Free[T_Chosen_NH4];
-
-//					if(NH4_Ammonium == 0)
-//						Nitrification_Potential = 0;
-//					else
-//						Nitrification_Potential = NH4_NH3_N_Free[T_Chosen_NH4] / Cl_TCl_ppm;
-//						Nitrification_Potential = NH4_Ammonium / Cl_TCl_ppm;
-
-					//					if(NH4_Ammonium == 0)
-					//						NH4_BFR = 0;
-					//					else
-					//						NH4_BFR = Cl_TCl_ppm / NH4_Ammonium;
-					//					}
-					//					else
-					//					{
-					//						NH4_TNH3 = NH4_NH3_N_Total_T1[T_Chosen_NH4] + Cl_MCl_ppm * 0.1986;
-					//						if(NH4_TNH3 == 0)
-					//							NH4_Cl_NH3 = 0;
-					//						else
-					//							NH4_Cl_NH3 = Cl_TCl_ppm / NH4_TNH3;
-					//
-					//						if(NH4_NH3_N_Free_T1[T_Chosen_NH4] == 0)
-					//							NH4_BFR = 0;
-					//						else
-					//							NH4_BFR = Cl_TCl_ppm / NH4_NH3_N_Free_T1[T_Chosen_NH4];
-					//					}
-				}
-
-				//				//
-				//				// LSI & RSI
-				//				//
-				//				float LSI_A = (log10(/*TDS*/Conductivity/2) - 1) / 10;
-				//				float LSI_B = -13.12 * log10(T_Samp + 273) + 34.55;
-				//				float LSI_C = log10(Ca_Hardness[T_Chosen_Ca]) - 0.4;
-				//				float LSI_D = log10(Alk_Samp[T_Chosen_Alk]);
-
-				//				float LSI_pH_S = (9.3 + LSI_A + LSI_B) - (LSI_C + LSI_D);
-				//				float LSI = pH_Samp[T_Chosen_pH] - LSI_pH_S;
-				//				float RSI = (2 * LSI_pH_S) - pH_Samp[T_Chosen_pH];
-
-				//
-				// Alkalinity and CO2 Calculations
-				//
-				float Alk_Bicarb = nanf(""), /*Alk_Carb = -1, Alk_Hydrox = -1,*/ CO2_Free = nanf("");
-				if(ISEs.RunAlk && Alk_Samp[T_Chosen_Alk] == Alk_Samp[T_Chosen_Alk])
-				{
-					Alk_Bicarb = (Alk_Samp[T_Chosen_Alk] - 5.0 * pow(10, (pH_Cr_Samp[T_Chosen_pH] - 10)))/(1.0 + 0.94 * pow(10, (pH_Cr_Samp[T_Chosen_pH] - 10)));
-					//					Alk_Carb = 0.94 * Alk_Bicarb * pow(10, (pH_Samp[T_Chosen_pH] - 10.0));
-					//					Alk_Hydrox = 5.0 * pow(10, (pH_Samp[T_Chosen_pH] - 10.0));
-					CO2_Free = 2.0 * Alk_Bicarb * pow(10, 6 - pH_Cr_Samp[T_Chosen_pH]);
-					//				float CO2_Total = CO2_Free + 0.44 * (2 * Alk_Bicarb + Alk_Carb);
-				}
-
-				//				if(CHECK_NEGATIVE == 1)
-				//				{
-				//					// First check lower limit, make sure we are not outputting anything negative, if we are change to 0
-				//					for(i = 0; i < 2; i++)
-				//					{
-				//
-				//						if(Alk_Samp[i] < 0)
-				//							Alk_Samp[i] = 0;
-				////						if(Ca_ppm[i] < 0)
-				////							Ca_ppm[i] = 0;
-				//						if(TH_corr[i] < 0)
-				//							TH_corr[i] = 0;
-				//						if(Ca_Hardness[i] < 0)
-				//							Ca_Hardness[i] = 0;
-				//					}
-				//
-				//					for(i = 0; i < 3; i++)
-				//					{
-				//						if(pH_Samp[i] < 0)
-				//							pH_Samp[i] = 0;
-				//						if(NH4_NH3_N_Free[i] < 0)
-				//							NH4_NH3_N_Free[i] = 0;
-				//						if(NH4_NH3_N_Total[i] < 0)
-				//							NH4_NH3_N_Total[i] = 0;
-				//					}
-				//
-				//					if(T_Samp < 0)
-				//						T_Samp = 0;
-				//					if(Conductivity < 0)
-				//						Conductivity = 0;
-				//					if(Mg_ppm < 0)
-				//						Mg_ppm = 0;
-				//					if(Mg_Hardness < 0)
-				//						Mg_Hardness = 0;
-				//					if(Cl_FCl_ppm < 0)
-				//						Cl_FCl_ppm = 0;
-				//					if(Cl_TCl_ppm < 0)
-				//						Cl_TCl_ppm = 0;
-				//					if(NH4_TNH3 < 0)
-				//						NH4_TNH3 = 0;
-				//					if(NH4_Cl_NH3 < 0)
-				//						NH4_Cl_NH3 = 0;
-				//					if(Cl_MCl_ppm < 0)
-				//						Cl_MCl_ppm = 0;
-				//				}
-
 				// Track number of tests each sensor has performed in Sensor Usage characteristic
 				uint16_t No_of_tests = *((uint16_t *) MemoryRead(PAGE_CARTRIDGE_INFO, OFFSET_COMPLETED_TESTS, 2));
 				if(No_of_tests == 0xFFFF)
 					No_of_tests = 0;
 				No_of_tests++;
 				MemoryWrite(PAGE_CARTRIDGE_INFO, OFFSET_COMPLETED_TESTS, 2, (uint8_t *) &No_of_tests);
-
-				//			// Save test data to memory
-//				MemoryWrite(Test_page, OFFSET_TEST_CPU_TEMP, 4, (uint8_t *) &CPU_Temperature);
-				if(ISE_Cal_Status[ISEs.pH_Cr.index + T_Chosen_pH] && ISEs.pH_Cr.size > 0)	// Check that chosen sensor passed calibration before reporting a number
-					MemoryWrite(Test_page, OFFSET_TEST_PH, 4, (uint8_t *) &pH_Cr_Samp[T_Chosen_pH]);
-				MemoryWrite(Test_page, OFFSET_TEST_TEMP, 4, (uint8_t *) &T_Samp);
-				if(Cond_Cal_Status)
-					MemoryWrite(Test_page, OFFSET_TEST_COND, 4, (uint8_t *) &Conductivity);
-				if(ISEs.RunAlk)
-				{
-					if(ISE_Cal_Status[ISEs.pH_H2.index + T_Chosen_Alk] && ISEs.pH_H2.size > 0)
-						MemoryWrite(Test_page, OFFSET_TEST_ALKALINITY, 4, (uint8_t *) &Alk_Samp[T_Chosen_Alk]);
-					if(ISE_Cal_Status[ISEs.pH_H2.index + T_Chosen_Alk] && ISE_Cal_Status[ISEs.pH_Cr.index + T_Chosen_pH] && ISEs.pH_H2.size > 0 && ISEs.pH_Cr.size > 0)
-						MemoryWrite(Test_page, OFFSET_TEST_CO2, 4, (uint8_t *) &CO2_Free);
-				}
-				MemoryWrite(Test_page, OFFSET_TEST_FREE_CL, 4, (uint8_t *) &Cl_FCl_ppm);
-				MemoryWrite(Test_page, OFFSET_TEST_TOTAL_CL, 4, (uint8_t *) &Cl_TCl_ppm);
-				MemoryWrite(Test_page, OFFSET_TEST_MONO, 4, (uint8_t *) &Cl_MCl_ppm);
-				if(ISEs.Config != PH_CL_CART)
-				{
-
-#ifdef REPORT_TH_RATIO_RAMP
-					if(Cond_Cal_Status && ISE_Cal_Status[ISEs.Ca.index + T_Chosen_Ca] && ISE_Cal_Status[ISEs.TH.index + T_Chosen_TH_RR])
-						MemoryWrite(Test_page, OFFSET_TEST_TOTAL_HARDNESS, 4, (uint8_t *) &TH_iterated[T_Chosen_TH_RR]);
-#else
-					if(Cond_Cal_Status && ISE_Cal_Status[ISEs.Ca.index + T_Chosen_Ca] && ISE_Cal_Status[ISEs.TH.index + T_Chosen_TH] && ISEs.Ca.size > 0 && ISEs.TH.size > 0)
-						MemoryWrite(Test_page, OFFSET_TEST_TOTAL_HARDNESS, 4, (uint8_t *) &TH_corr[T_Chosen_TH]);
-#endif
-					if(Cond_Cal_Status && ISE_Cal_Status[ISEs.Ca.index + T_Chosen_Ca] && ISEs.Ca.size > 0)
-						MemoryWrite(Test_page, OFFSET_TEST_CAL_HARDNESS, 4, (uint8_t *) &Ca_Hardness[T_Chosen_Ca]);
-					if(Cond_Cal_Status && ISE_Cal_Status[ISEs.NH4.index + T_Chosen_NH4] && ISEs.NH4.size > 0)
-						MemoryWrite(Test_page, OFFSET_TEST_FREE_NH4, 4, (uint8_t *) &NH4_Ammonium);
-					if(Cond_Cal_Status && ISE_Cal_Status[ISEs.NH4.index + T_Chosen_NH4] && ISE_Cal_Status[ISEs.pH_Cr.index + T_Chosen_pH] && ISEs.NH4.size > 0)
-					{
-						MemoryWrite(Test_page, OFFSET_TEST_TOTAL_NH4, 4, (uint8_t *) &NH4_NH3_N_Free[T_Chosen_NH4]);
-						MemoryWrite(Test_page, OFFSET_TEST_TOTAL_NH4_MONO, 4, (uint8_t *) &NH4_TNH3);
-						MemoryWrite(Test_page, OFFSET_TEST_CL_NH4_RATIO, 4, (uint8_t *) &NH4_Cl_NH3);
-						//					MemoryWrite(Test_page, OFFSET_TEST_BFR, 4, (uint8_t *) &Nitrification_Potential);
-						MemoryWrite(Test_page, OFFSET_TEST_BFR, 4, (uint8_t *) &Nitrification_Capacity);
-					}
-					MemoryWrite(Test_page, OFFSET_TEST_LOG_K, 4, (uint8_t *) &log_K_Ca_Mg);
-				}
-
-				MemoryWrite(Test_page, OFFSET_TEST_ORP, 4, (uint8_t *) &ORP);
-				MemoryWrite(Test_page, OFFSET_TEST_T_THERM, 4, (uint8_t *) &T_Therm);
-
-				MemoryWrite(Test_page, OFFSET_CHOSEN_SENSORS, 1, &ui8TChosen_Sensors);
-
-				if(1)
-				{
-					uint8_t Zero = 0;
-					MemoryWrite(Test_page, OFFSET_TEST_DATA_ZERO, 1, &Zero);
-					MemoryWrite(Test_page, OFFSET_RAW_TEST_ZERO, 1, &Zero);
-				}
-
-
-				// Save raw data to memory
-				MemoryWrite(Test_page, OFFSET_RAW_T_RINSE, 4, (uint8_t *) &T_Rinse);
-				for(i = 0; i < 10; i++)
-				{
-					MemoryWrite(Test_page, OFFSET_RAW_ISE_1_RINSE + (i * 4), 4, (uint8_t *) &ISE_E_Rinse[i]);
-					MemoryWrite(Test_page, OFFSET_RAW_ISE_1_SAMP + (i * 4), 4, (uint8_t *) &ISE_E_Samp[i]);
-				}
-
-				MemoryWrite(Test_page, OFFSET_RAW_CL_FCL, 4, (uint8_t *) &Cl_nA_FCl);
-				MemoryWrite(Test_page, OFFSET_RAW_CL_TCL, 4, (uint8_t *) &Cl_nA_TCl);
 
 #ifdef PRINT_UART
 				if(PRINT_RAW == 1)
@@ -13513,16 +13365,6 @@ int main(void) {
 						{DEBUG_PRINT(UARTprintf("FCL \t %d \t nA * 1000\n", (int) (Cl_nA_FCl * 1000));)}
 					if(MEASURE_TCL)
 						{DEBUG_PRINT(UARTprintf("TCL \t %d \t nA * 1000\n", (int) (Cl_nA_TCl * 1000));)}
-
-					//					DEBUG_PRINT(UARTprintf("Excel:\n");)
-					//					DEBUG_PRINT(UARTprintf("\tpH 1\tpH 2\tpH 3\tCa 1\tCa 2\tTH 1\tTH 2\tNH4 1\tNH4 2\tNH4 3\n");)
-					//					DEBUG_PRINT(UARTprintf("Prerinse\t=%d/1000\t=%d/1000\t=%d/1000\t=%d/1000\t=%d/1000\t=%d/1000\t=%d/1000\t=%d/1000\t=%d/1000\t=%d/1000\n", (int) (pH_E_Rinse[0] * 1000), (int) (pH_E_Rinse[1] * 1000), (int) (pH_E_Rinse[2] * 1000),
-					//							(int) (Ca_E_Rinse[0] * 1000), (int) (Ca_E_Rinse[1] * 1000), (int) (TH_E_Rinse[0] * 1000), (int) (TH_E_Rinse[1] * 1000), (int) (NH4_E_Rinse[0] * 1000), (int) (NH4_E_Rinse[1] * 1000), (int) (NH4_E_Rinse[2] * 1000));)
-					//					DEBUG_PRINT(UARTprintf("Sample\t=%d/1000\t=%d/1000\t=%d/1000\t=%d/1000\t=%d/1000\t=%d/1000\t=%d/1000\t=%d/1000\t=%d/1000\t=%d/1000\n", (int) (pH_E_Samp[0] * 1000), (int) (pH_E_Samp[1] * 1000), (int) (pH_E_Samp[2] * 1000),
-					//							(int) (Ca_E_Samp[0] * 1000), (int) (Ca_E_Samp[1] * 1000), (int) (TH_E_Samp[0] * 1000), (int) (TH_E_Samp[1] * 1000), (int) (NH4_E_Samp[0] * 1000), (int) (NH4_E_Samp[1] * 1000), (int) (NH4_E_Samp[2] * 1000));)
-					//					DEBUG_PRINT(UARTprintf("Postrinse\t=%d/1000\t=%d/1000\t=%d/1000\t=%d/1000\t=%d/1000\t=%d/1000\t=%d/1000\t=%d/1000\t=%d/1000\t=%d/1000\n", (int) (pH_E_PostRinse[0] * 1000), (int) (pH_E_PostRinse[1] * 1000), (int) (pH_E_PostRinse[2] * 1000),
-					//							(int) (Ca_E_PostRinse[0] * 1000), (int) (Ca_E_PostRinse[1] * 1000), (int) (TH_E_PostRinse[0] * 1000), (int) (TH_E_PostRinse[1] * 1000), (int) (NH4_E_PostRinse[0] * 1000), (int) (NH4_E_PostRinse[1] * 1000), (int) (NH4_E_PostRinse[2] * 1000));)
-					//					DEBUG_PRINT(UARTprintf("\n");)
 				}
 
 				DEBUG_PRINT(UARTprintf("\n");)
@@ -13636,45 +13478,7 @@ int main(void) {
 					DEBUG_PRINT(UARTprintf("Ca Hardness\t%d\tCaCO3 ppm * 1000 \n", (int) (Ca_Hardness[T_Chosen_Ca] * 1000));)
 				if(MEASURE_ALKALINITY == 1 && ISEs.RunAlk)
 					DEBUG_PRINT(UARTprintf("Alkalinkity\t%d\n", (int) (Alk_Samp[T_Chosen_Alk] * 1000));)
-#endif	// PRINT_UART
 
-				if(MEASURE_FCL)
-				{
-					if(Cl_nA_FCl > Cl_FCl_Midpoint)
-						Cl_FCl_ppm = ((Cl_nA_FCl - Cl_FCl_Int) / Cl_FCl_Slope);//*((Steps_Sample_B1 + (float) Steps_B1) / Steps_Sample_B1); // ppm Cl2
-					else
-						Cl_FCl_ppm = ((Cl_nA_FCl - Cl_FCl_Int_High) / Cl_FCl_Slope_High);//*((Steps_Sample_B1 + (float) Steps_B1) / Steps_Sample_B1); // ppm Cl2
-
-					if(Cl_FCl_ppm < 0)
-						Cl_FCl_ppm = 0;
-				}
-
-				if(MEASURE_TCL)
-				{
-					// 2/26/2020: Removed dilution math because dilution during calibration is same as dilution during tests
-					if(Cl_nA_TCl > Cl_TCl_Midpoint)
-						Cl_TCl_ppm = ((Cl_nA_TCl - Cl_TCl_Int) / Cl_TCl_Slope);//*((Steps_Sample_B2 + (float) Steps_B2 + (float) Steps_C2) / Steps_Sample_B2); // ppm Cl2
-					else
-						Cl_TCl_ppm = ((Cl_nA_TCl - Cl_TCl_Int_High) / Cl_TCl_Slope_High);//*((Steps_Sample_B2 + (float) Steps_B2 + (float) Steps_C2) / Steps_Sample_B2); // ppm Cl2
-
-					if(Cl_TCl_ppm < 0)
-						Cl_TCl_ppm = 0;
-
-					// TODO: Change logic to make sure FCl and TCl are valid relative to each other, turned off for testing
-					//					if(MEASURE_FCL && Cl_TCl_ppm < Cl_FCl_ppm)
-					//						Cl_FCl_ppm = Cl_TCl_ppm;	// TCl is more accurate than FCl so set to match TCl if FCl is higher TODO: revisit this assumption, is FCl more accurate now? which has worst first point problem
-
-					if(MEASURE_FCL)//&& ((gui32Error & FCL_MIX_OUT_OF_RANGE) == 0)) // TODO: Put back in check
-					{
-						Cl_MCl_ppm = Cl_TCl_ppm - Cl_FCl_ppm; 				// ppm Cl2
-						//						Cl_MCl_NH3 = Cl_MCl_ppm * 14.0 / 70.9;				// ppm NH3
-
-						if(Cl_MCl_ppm < 0)
-							Cl_MCl_ppm = 0;
-					}
-				}
-
-#ifdef PRINT_UART
 				if(MEASURE_FCL)
 					DEBUG_PRINT(UARTprintf("Free Cl2\t%d\tCl2 ppm * 1000\n", (int) (Cl_FCl_ppm * 1000));)
 				if(MEASURE_TCL)

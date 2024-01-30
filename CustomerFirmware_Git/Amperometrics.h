@@ -30,6 +30,16 @@
 #define COND_TCOMP_SAMP 	0.0198
 #define COND_TCOMP_CONDLOW	0.0242
 
+#define	CL_FCL_INT			-1.625
+#define	CL_FCL_SLOPE 		-40.592
+#define	CL_FCL_INT_HIGH 	8.388
+#define	CL_FCL_SLOPE_HIGH 	-70.932
+
+#define CL_TCL_SLOPE		-65.987
+#define CL_TCL_INT			-7.547
+#define CL_TCL_SLOPE_HIGH	-74.374
+#define CL_TCL_INT_HIGH		-4.779
+
 extern float CalculateCurrent(float ADC_Voltage, float DAC_Voltage, uint8_t High_current_switch);
 
 //extern float * ADCReadAll(void);
