@@ -7026,8 +7026,27 @@ int main(void) {
 			SetLED(RED_BUTTON | GREEN_BUTTON | RED_BUTTON_V | GREEN_BUTTON_V | BLUE_BUTTON_V | LED_BLINK, 0);
 			while(GPIOPinRead(IO_BUTTON_BASE, IO_BUTTON_PIN) == 0x00);
 
-			// Wait 5 ms to let app read status and operation before switching back to idle
-			SysCtlDelay(SysCtlClockGet()/3000 * 5);
+			counter = 0;
+			g_ulSSI0RXTO = 0;
+			while(counter < 5000)	// Wait 5 seconds, or until the app acknowledges it is done
+			{
+				SysCtlDelay(SysCtlClockGet()/3000);
+				counter++;
+
+				// Break out of while loop if continue calibration command is received
+				if(g_ui32DataRx0[0] == CONTINUE_CAL && g_ulSSI0RXTO > 0)
+				{
+					g_ulSSI0RXTO = 0;
+					break;
+				}
+
+				// Check if state changed, this happens when abort command is received
+				if(g_state != STATE_CALIBRATION)
+					break;	// Breaks out of while loop
+			}
+
+//			// Wait 5 ms to let app read status and operation before switching back to idle
+//			SysCtlDelay(SysCtlClockGet()/3000 * 5);
 
 			g_state = STATE_IDLE;
 			g_next_state = STATE_IDLE;

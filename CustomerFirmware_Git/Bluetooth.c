@@ -639,7 +639,7 @@ void update_Cal(int Cal)
 
 		DEBUG_PRINT(
 		if(gDiagnostics >= 1)
-			UARTprintf("update cal data \n");
+			UARTprintf("update cal data\n");
 		)
 
 		if(Cal > 0)
