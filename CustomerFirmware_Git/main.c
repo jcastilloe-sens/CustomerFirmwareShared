@@ -336,6 +336,7 @@
 //		V01.03.16: Created 1/10/2024: Changed to a universal choosing function for the ISEs, updated to be compatible with disinfection cartridge
 //		V01.03.17: Created 1/22/2024: Using Rinse as the middle point for the conductivity calibration, found it is more consistent than Clean
 //		V01.03.18: Created 1/30/2024: Moved all parameter calculations and saving to when they are measured so they can be reported in app ASAP
+//			2/1/2024: Send commands to BT to update Test and Cal data as it progresses
 //*****************************************************************************
 #include <stdio.h>
 #include <stdint.h>
@@ -388,7 +389,7 @@
 #define ENFORCE_ERRORS	1	// 0 will ignore errors and allow testing anyway, 1 will prevent device from running because of certain errors
 #define ISE_WAIT	25		// Time to wait for ISEs to settle
 #define PRINT_ISE_TIME_DATA		1	// 1 will print time trace data for ISEs, 0 will not print data
-#define UPDATE_BT		1
+//#define UPDATE_BT		1
 //#define STORE_IN_RINSE_T	1	// 1 will pump rinse in at the end of test, 0 will pump store in at the end of test
 //#define STORE_IN_RINSE_C	1	// 1 will pump rinse in at the end of cal, 0 will pump store in at the end of cal
 #define PRINT_RAW		1	// 1 will print out raw data from calibrations and tests, 0 will not print raw data
@@ -2062,8 +2063,8 @@ int main(void) {
 			for(i = 0; i < PAGES_FOR_CAL; i++)
 			{
 				uint8_t j;
-				uint32_t Clear_mem = 0;
-				for(j = 0; j < 32; j++)
+				uint32_t Clear_mem = 0xFFFF;
+				for(j = 0; j < 64; j++)
 				{
 					MemoryWrite(Cal_page + i, (j * 4), 1, (uint8_t *) &Clear_mem);
 				}
@@ -2072,15 +2073,23 @@ int main(void) {
 			MemoryWrite(Cal_page, OFFSET_CAL_NUMBER, 2, (uint8_t *) &Cal_Number);
 			MemoryWrite(Cal_page, OFFSET_CAL_DATE, 4, pui8SysStatus);
 			MemoryWrite(Cal_page, OFFSET_CAL_TIME, 3, (pui8SysStatus + 4));
-			MemoryWrite(Cal_page, OFFSET_CAL_USER, 4, (pui8SysStatus + 7));
-			MemoryWrite(Cal_page, OFFSET_CAL_GPS, 8, (pui8SysStatus + 27));
-			MemoryWrite(Cal_page, OFFSET_CAL_LOCATION, 4, (pui8SysStatus + 35));
+//			MemoryWrite(Cal_page, OFFSET_CAL_USER, 4, (pui8SysStatus + 7));
+//			MemoryWrite(Cal_page, OFFSET_CAL_GPS, 8, (pui8SysStatus + 27));
+//			MemoryWrite(Cal_page, OFFSET_CAL_LOCATION, 4, (pui8SysStatus + 35));
 			MemoryWrite(Cal_page, OFFSET_CAL_BATTERY, 1, &Battery_Status);
 			MemoryWrite(Cal_page, OFFSET_CAL_ERROR, 4, (uint8_t *) &gui32Error);
 			MemoryWrite(Cal_page, OFFSET_CAL_ZERO, 1, &Zero);
 
 			uint32_t Calibration_Status = 0;
 			MemoryWrite(Cal_page, OFFSET_CAL_STATUS, 4, (uint8_t *) &Calibration_Status);
+
+			if(1)
+			{
+				uint8_t Calibrated = 0;
+				uint16_t Slope_Pers[6] = {0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF};
+				MemoryWrite(Cal_page, OFFSET_CALIBRATED_STATUS, 1, &Calibrated);
+				MemoryWrite(Cal_page, OFFSET_ALK_SLOPE_PER, 12, (uint8_t *) &Slope_Pers);
+			}
 
 #if defined REMAINING_DAYS_MAX_CALS || defined EXPIRATION_DATE
 			if(Cal_Number == 1)	// If this is the first calibration, check if the expiration date needs to be adjusted
@@ -2178,129 +2187,6 @@ int main(void) {
 			}
 #endif
 
-//#ifdef REMAINING_DAYS_MAX_CALS
-//			if(Cal_Number == 1)	// If this is the first calibration, check if the expiration date needs to be adjusted
-//			{
-//				// Parse the current time from the BT data
-//				struct tm curTime;
-//				curTime.tm_mon = *pui8SysStatus - 1;
-//				curTime.tm_mday = *(pui8SysStatus + 1);
-//				curTime.tm_year = *(pui8SysStatus + 2) * 100 + *(pui8SysStatus + 3) - 1900;
-//				curTime.tm_hour = *(pui8SysStatus + 4);
-//				curTime.tm_min = *(pui8SysStatus + 5);
-//				curTime.tm_sec = *(pui8SysStatus + 6);
-//
-//				uint32_t Date = mktime(&curTime);	// Get current time in seconds since 1900
-//
-//				// Pull the hydration date from memory
-//				uint8_t *Sensor_Hydration;	// Pointer to data for hydration date, read from memory
-//				struct tm hydTime;
-//
-//				Sensor_Hydration = MemoryRead(PAGE_CARTRIDGE_INFO, OFFSET_SENSOR_HYDRATION_DATE, 4); // Read expiration date from memory
-//
-//				// Fill in time structure with data read from memory
-//				hydTime.tm_mon = *Sensor_Hydration - 1;	// Month [0,11]
-//				hydTime.tm_mday = *(Sensor_Hydration + 1); // Day [1,31]
-//				hydTime.tm_year = (*(Sensor_Hydration + 2) * 100) + *(Sensor_Hydration + 3) - 1900;	// Years since 1900
-//				hydTime.tm_hour = 0;
-//				hydTime.tm_min = 0;
-//				hydTime.tm_sec = 0;
-//
-//				uint32_t Hydration_Date = mktime(&hydTime);	// Convert expiration from human readable to Epoch time (seconds since 1900)
-//
-//				if(Hydration_Date > Date)	// This cartridge was supposedly hydrated in the future... change hydration date to today
-//				{
-//					// Double check todays date is realistic...
-//					if(curTime.tm_year > 100 && curTime.tm_year < 140)	// 40 year window we are right in the middle of.. Sloppy but will fix memories that have a future hydration date
-//					{
-//						Hydration_Date = Date;
-//
-//						MemoryWrite(PAGE_CARTRIDGE_INFO, OFFSET_SENSOR_HYDRATION_DATE, 4, pui8SysStatus);
-//					}
-//				}
-//
-//				// Pull the max days from memory
-//				uint8_t Max_Days = *MemoryRead(PAGE_CARTRIDGE_INFO, OFFSET_SENSOR_MAX_DAYS, 1);
-//				if(Max_Days == 0xFF)
-//				{
-//					Max_Days = 35;	// Standard cartridge lasts for 35 days (30 + 5 for shipping)
-//				}
-//
-//				// Pull the max Cals from memory
-//				uint8_t Max_Cals = *MemoryRead(PAGE_CARTRIDGE_INFO, OFFSET_SENSOR_MAX_CALS, 1);
-//				if(Max_Cals == 0xFF)
-//				{
-//					Max_Cals = 30;	// Standard cartridge lasts for 35 days (30 + 5 for shipping)
-//				}
-//
-//				if(Hydration_Date + (Max_Days * 24 * 3600) > Date + (Max_Cals * 24 * 3600))	// Check if the currently set expiration date is further out than the current time plus cartridge lifetime
-//				{
-//					// Need to rewrite the Max Days now that cartridge's lifetime has started
-//					uint8_t DaysRemaining = Max_Cals + ((Date - Hydration_Date)/(24*3600));
-//					DEBUG_PRINT(UARTprintf("First calibration, rewriting Max Days to %d\n", DaysRemaining);)
-//
-//					MemoryWrite(PAGE_CARTRIDGE_INFO, OFFSET_SENSOR_MAX_DAYS, 1, &DaysRemaining);
-//				}
-//			}
-//#endif
-//#ifdef EXPIRATION_DATE
-//			if(Cal_Number == 1)	// If this is the first calibration, check if the expiration date needs to be adjusted
-//			{
-//				// Parse the current time from the BT data
-//				struct tm curTime;
-//				curTime.tm_mon = *pui8SysStatus - 1;
-//				curTime.tm_mday = *(pui8SysStatus + 1);
-//				curTime.tm_year = *(pui8SysStatus + 2) * 100 + *(pui8SysStatus + 3) - 1900;
-//				curTime.tm_hour = *(pui8SysStatus + 4);
-//				curTime.tm_min = *(pui8SysStatus + 5);
-//				curTime.tm_sec = *(pui8SysStatus + 6);
-//
-//				uint32_t Date = mktime(&curTime);	// Get current time in seconds since 1900
-//
-//				// Pull the expiration date from memory
-//				uint8_t *Sensor_Expiration;	// Pointer to data for expiration date, read from memory
-//				struct tm expTime;
-//
-//				Sensor_Expiration = MemoryRead(PAGE_CARTRIDGE_INFO, OFFSET_SENSOR_EXPIRATION_DATE, 4); // Read expiration date from memory
-//
-//				// Fill in time structure with data read from memory
-//				expTime.tm_mon = *Sensor_Expiration - 1;	// Month [0,11]
-//				expTime.tm_mday = *(Sensor_Expiration + 1); // Day [1,31]
-//				expTime.tm_year = (*(Sensor_Expiration + 2) * 100) + *(Sensor_Expiration + 3) - 1900;	// Years since 1900
-//				expTime.tm_hour = 0;
-//				expTime.tm_min = 0;
-//				expTime.tm_sec = 0;
-//
-//				uint32_t Expiration_Date = mktime(&expTime);	// Convert expiration from human readable to Epoch time (seconds since 1900)
-//
-//				// Pull the max days from memory
-//				uint8_t Max_Days = *MemoryRead(PAGE_CARTRIDGE_INFO, OFFSET_SENSOR_MAX_DAYS, 1);
-//				uint32_t Cartridge_life;	// Convert to seconds for easy math
-//				if(Max_Days != 0xFF)
-//				{
-//					Cartridge_life = 3600 * 24 * Max_Days;	// Standard cartridge lasts for 35 days (30 + 5 for shipping)
-//				}
-//				else
-//				{
-//					Cartridge_life = 3600 * 24 * 35;	// Standard cartridge lasts for 35 days (30 + 5 for shipping)
-//					if(ISEs.Config == PH_CL_CART)
-//						Cartridge_life = 3600 * 24 * 65; // pH Cl cartridge lasts for 65 days (60 + 5 for shipping)
-//				}
-//
-//				if(Expiration_Date > Date + Cartridge_life)	// Check if the currently set expiration date is further out than the current time plus cartridge lifetime
-//				{
-//					// Need to rewrite the expiration date now that cartridge's lifetime has started
-//					time_t New_Expiration = Date + Cartridge_life;
-//					struct tm *NewExp = gmtime(&New_Expiration);
-//					uint8_t NewExpDate[4] = {NewExp->tm_mon + 1, NewExp->tm_mday, 20, NewExp->tm_year - 100};
-//
-//					DEBUG_PRINT(UARTprintf("First calibration, rewriting expiration to %d/%d/%d%d\n", NewExpDate[0], NewExpDate[1], NewExpDate[2], NewExpDate[3]);)
-//
-//					MemoryWrite(PAGE_CARTRIDGE_INFO, OFFSET_SENSOR_EXPIRATION_DATE, 4, NewExpDate);
-//				}
-//			}
-//#endif
-
 			// EEPROM commands require multiples of 4, so create Device_Serial to be 8 long even though there are only 7 bytes necessary
 			uint8_t Device_Serial[8];
 			EEPROMRead((uint32_t *) Device_Serial, OFFSET_SERIAL_NUMBER, 8);
@@ -2316,6 +2202,8 @@ int main(void) {
 				// Have to save all the values outside of MemoryRead buffer before calling MemoryWrite otherwise it could rewrite data before running check at end
 				MemoryWrite(Cal_page, OFFSET_PH_1_LAST_P_CAL, 10, Last_cal_passed);
 			}
+
+			update_Cal(Cal_Number);
 
 //			// Save space in the memory for all 10 spots, then define where each sensor type is within that array
 //			// Define Cal 2 here because NH4 is being placed in this buffer
@@ -2725,6 +2613,8 @@ int main(void) {
 					ConnectMemory(1);
 					MemoryWrite(Cal_page, OFFSET_CR_CAL_2_MV, 40, (uint8_t *) ISE_mV_Cal_2);
 
+					update_Cal(Cal_Number);
+
 					// Push air back into Cal 2 port before moving to next solution
 					if(BUBBLES_IN_TUBE)
 					{
@@ -3013,6 +2903,8 @@ int main(void) {
 
 					ConnectMemory(1);
 					MemoryWrite(Cal_page, OFFSET_CR_ISE_1_RINSE, 40, (uint8_t *) ISE_mV_Rinse);
+
+					update_Cal(Cal_Number);
 
 					// Push air back into rinse port before moving to next solution
 					if(BUBBLES_IN_TUBE)
@@ -3379,6 +3271,8 @@ int main(void) {
 
 								ConnectMemory(1);
 								MemoryWrite(Cal_page, OFFSET_CR_CLEAN_MV, 40, (uint8_t *) ISE_mV_Clean);
+
+								update_Cal(Cal_Number);
 
 								// Push air back into Clean port before moving to next solution
 								if(BUBBLES_IN_TUBE)
@@ -4484,6 +4378,8 @@ int main(void) {
 						// Save error data after all other data has been written to memory
 						gui32Error &= ~(ROAM_RESET | APP_FILTER_ERROR);	// Turn off ROAM_RESET flag before saving error code
 						MemoryWrite(Cal_page, OFFSET_CAL_ERROR, 4, (uint8_t *) &gui32Error);
+
+						update_Cal(Cal_Number);
 
 #ifdef PRINT_UART
 						if(PRINT_RAW == 1)
@@ -5715,6 +5611,7 @@ int main(void) {
 			PrintTime();
 //			if((gui32Error & ABORT_ERRORS) == 0)
 			{
+				update_Cal(Cal_Number);
 				update_Status(STATUS_CALIBRATION, OPERATION_CAL_POSTCHECK);
 
 #ifdef PRINT_UART
@@ -6983,8 +6880,7 @@ int main(void) {
 			DEBUG_PRINT(UARTprintf("Error Code: 0x%x\n", gui32Error);)
 			PrintErrors(gui32Error, 1, STATE_CALIBRATION);
 
-			if(UPDATE_BT)
-				update_Cal(Cal_Number);
+			update_Cal(Cal_Number);
 
 			//			FindPossitionOneValve();
 
@@ -7056,7 +6952,7 @@ int main(void) {
 		case STATE_MEASUREMENT:
 		{
 			// Must send status before updating error so we know where to assign error
-			update_Status(STATUS_TEST, OPERATION_TEST_PRECHECK);	// Send status to BT that this is pre-check
+//			update_Status(STATUS_TEST, OPERATION_TEST_PRECHECK);	// Send status to BT that this is pre-check
 
 			// Set error to 0 at beginning
 			gui32Error = 0;
@@ -7137,8 +7033,53 @@ int main(void) {
 #ifndef TESTING_MODE
 				g_state = STATE_CALIBRATION;
 //				g_next_state = STATE_MEASUREMENT;
+
+				counter = 0;
+				while(GPIOPinRead(IO_BUTTON_BASE, IO_BUTTON_PIN) == IO_BUTTON_PIN && counter < TIMEOUT)
+				{
+					SysCtlDelay(SysCtlClockGet()/3000);
+					counter++;
+
+					// Break out of loop if continue test command is received
+					if(g_ui32DataRx0[0] == CONTINUE_TEST && g_ulSSI0RXTO > 0)
+					{
+						g_state = STATE_MEASUREMENT;	// Continue test command is only way to continue test is calibration has failed and NOT in testing mode
+						g_ulSSI0RXTO = 0;
+						SetLED(BLUE_BUTTON | BLUE_BUTTON_V, 0);
+						SetLED(GREEN_BUTTON | GREEN_BUTTON_V, 1);
+						break;
+					}
+
+					// Break out of loop if continue test command is received
+					if(g_ui32DataRx0[0] == CONTINUE_CAL && g_ulSSI0RXTO > 0)
+					{
+						g_ulSSI0RXTO = 0;
+						break;
+					}
+
+					if(gCartridge == 0)	// If the cartridge is unplugged return to idle
+						g_state = STATE_IDLE;
+
+					// Return to idle if abort command is received
+					if(g_state == STATE_IDLE)
+						break;
+				}
+
+				if(counter == TIMEOUT)
+				{
+					g_state = STATE_IDLE;
+					g_next_state = STATE_IDLE;
+				}
 #endif
 			}
+
+			SetLED(BLUE_BUTTON | BLUE_BUTTON_V, 0);
+
+			// Return to idle if abort command is received
+			if(g_state != STATE_MEASUREMENT)
+				break;
+
+			update_Status(STATUS_TEST, OPERATION_TEST_PRECHECK);	// Send status to BT that this is pre-check
 
 			counter = 0;
 #ifndef LIFETIME_TESTING
@@ -7631,6 +7572,8 @@ int main(void) {
 //			MemoryWrite(Test_page, OFFSET_FINAL_THERM, 4, (uint8_t *) &T_Therm_F);
 			MemoryWrite(Test_page, OFFSET_TEST_T_THERM, 4, (uint8_t *) &T_Therm);
 
+			update_Test(Test_Number);
+
 			//
 			// Flow Chart Measurement Teal section, pre-rinse
 			//
@@ -7729,6 +7672,8 @@ int main(void) {
 					MemoryWrite(Test_page, OFFSET_RAW_T_RINSE, 4, (uint8_t *) &T_Rinse);
 					for(i = 0; i < 10; i++)
 						MemoryWrite(Test_page, OFFSET_RAW_ISE_1_RINSE + (i * 4), 4, (uint8_t *) &ISE_E_Rinse[i]);
+
+					update_Test(Test_Number);
 
 					// Push air back into rinse port before moving to next solution
 					if(BUBBLES_IN_TUBE)
@@ -8115,6 +8060,8 @@ int main(void) {
 				for(i = 0; i < 10; i++)
 					MemoryWrite(Test_page, OFFSET_RAW_ISE_1_SAMP + (i * 4), 4, (uint8_t *) &ISE_E_Samp[i]);
 				MemoryWrite(Test_page, OFFSET_TEST_ORP, 4, (uint8_t *) &ORP);
+
+				update_Test(Test_Number);
 
 				//				if((gui32Error & ABORT_ERRORS) == 0)
 				//				{
@@ -8896,6 +8843,8 @@ int main(void) {
 							(T_Chosen_Ca << ISEs.Ca.StorBit);
 
 					MemoryWrite(Test_page, OFFSET_CHOSEN_SENSORS, 1, &ui8TChosen_Sensors);
+
+					update_Test(Test_Number);
 
 #ifdef PRINT_UART
 					DEBUG_PRINT(UARTprintf("Calculated values:\n");)
@@ -10029,6 +9978,8 @@ int main(void) {
 
 						if(ISE_Cal_Status[ISEs.pH_H2.index + T_Chosen_Alk] && ISE_Cal_Status[ISEs.pH_Cr.index + T_Chosen_pH] && ISEs.pH_H2.size > 0 && ISEs.pH_Cr.size > 0)
 							MemoryWrite(Test_page, OFFSET_TEST_CO2, 4, (uint8_t *) &CO2_Free);
+
+						update_Test(Test_Number);
 					}
 
 					//					if(ui8Times_mixed == (MAX_TIMES_TO_MIX + 1) && ((Steps_T1_Endpoint[0] == 0 && pH_Cal_Status[0] == 1) || (Steps_T1_Endpoint[1] == 0 && pH_Cal_Status[1] == 1)  || (DIE_REV_D && Steps_T1_Endpoint[2] == 0 && pH_Cal_Status[2] == 1)))
@@ -10522,6 +10473,8 @@ int main(void) {
 						NH4_Ammonium = 0;
 					if(Cond_Cal_Status && ISE_Cal_Status[ISEs.NH4.index + T_Chosen_NH4] && ISE_Cal_Status[ISEs.pH_Cr.index + T_Chosen_pH] && ISEs.NH4.size > 0)
 						MemoryWrite(Test_page, OFFSET_TEST_FREE_NH4, 4, (uint8_t *) &NH4_Ammonium);
+
+					update_Test(Test_Number);
 				}
 			}
 #endif	// STRAIGHT_TO_CL
@@ -10795,6 +10748,8 @@ int main(void) {
 
 							if(Cond_Cal_Status)
 								MemoryWrite(Test_page, OFFSET_TEST_COND, 4, (uint8_t *) &Conductivity);
+
+							update_Test(Test_Number);
 						}
 
 						if(MEASURE_FCL || MEASURE_TCL)
@@ -10820,9 +10775,9 @@ int main(void) {
 						if(BUBBLES_IN_TUBE)
 						{
 #ifdef CAL_2_RINSE
-								RunValveToPossition_Bidirectional_AbortReady(V_CAL_2, VALVE_STEPS_PER_POSITION);
+							RunValveToPossition_Bidirectional_AbortReady(V_CAL_2, VALVE_STEPS_PER_POSITION);
 #else
-								RunValveToPossition_Bidirectional_AbortReady(V_RINSE, VALVE_STEPS_PER_POSITION);
+							RunValveToPossition_Bidirectional_AbortReady(V_RINSE, VALVE_STEPS_PER_POSITION);
 #endif
 							PumpVolume(BW, PumpVol_tube_bubble, Speed_Fast, 1);
 							userDelay(valve_delay, 1);
@@ -11191,6 +11146,8 @@ int main(void) {
 						PumpStepperRunStepSpeed_AbortReady(BW, Steps_tube_bubble, Speed_ISE);
 						userDelay(valve_delay, 1);
 #endif
+
+						update_Test(Test_Number);
 					}
 				}
 
@@ -11630,6 +11587,7 @@ int main(void) {
 							}
 						}
 
+						update_Test(Test_Number);
 					}
 
 #ifdef READ_CL_MIX_PH
@@ -12235,7 +12193,9 @@ int main(void) {
 								}
 							}
 						}
-					}
+
+						update_Test(Test_Number);
+					}	// gui32Error abort errors
 
 #ifdef READ_CL_MIX_PH
 					if(READ_CL_MIX_PH)
@@ -13584,9 +13544,9 @@ int main(void) {
 			DEBUG_PRINT(UARTprintf("Error Code: 0x%x\n", gui32Error);)
 			PrintErrors(gui32Error, 1, STATE_MEASUREMENT);
 			DEBUG_PRINT(UARTprintf("\n");)
+			update_Error();
 
-			if(UPDATE_BT)
-				update_Test(Test_Number);
+			update_Test(Test_Number);
 
 			// Pause at end to wait for user to empty waste chamber
 			update_Status(STATUS_TEST, OPERATION_TEST_EMPTY_WASTE);
