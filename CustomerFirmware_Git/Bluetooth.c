@@ -452,15 +452,6 @@ void update_TCNumbers(void)
 	uint16_t Test = FindTestNumber();
 	uint16_t Cal = FindCalNumber();
 
-//	// TODO: Remove this when not erasing memory on reset
-//	uint8_t * No_of_tests = MemoryRead(PAGE_CARTRIDGE_INFO, OFFSET_SENSOR_USAGE, 1);
-//	if(*No_of_tests == 0xFF)
-//		*No_of_tests = 0;
-//	uint8_t Test = *No_of_tests;
-
-//	if(Test == 0)	// TODO: Fix app to recognize empty memory
-//		Test = 1;
-
 	// Empty SSI FIFO
     while(SSIDataGetNonBlocking(SSI0_BASE, &g_ui32DataRx0[2]))
     {

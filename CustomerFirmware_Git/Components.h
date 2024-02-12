@@ -1695,6 +1695,10 @@ extern uint8_t gui8IO_Ext2_Reg3;
 
 #define OFFSET_CAL_RERUN			2018	// Flag to hold whether to rerun calibration or not, need this so it carries over on resets and can be set with UART
 
+#define OFFSET_COND_ALT_I_LOW		2022
+#define OFFSET_COND_ALT_I_MID		2026
+#define OFFSET_COND_ALT_I_HIGH		2030
+
 //*****************************************************************************
 //
 // Prototypes for the APIs.
@@ -1730,7 +1734,11 @@ extern unsigned int BatteryRead(uint8_t ui8Register);
 
 extern void BuzzerSound(unsigned int uiCycles);
 
+#ifdef CONST_COND_FREQ
 extern void InitWaveGen(uint8_t Check_freq);
+#else
+extern void InitWaveGen(uint8_t Check_freq, uint16_t ui16freq);
+#endif
 
 extern void WaveGenSet(bool state);
 
@@ -1746,7 +1754,11 @@ extern void InitLED_Ext(void);
 
 extern void SetLED(uint16_t LED, uint8_t state);
 
+#ifdef CONST_COND_FREQ
 extern uint8_t CheckCond(void);
+#else
+extern uint8_t CheckCond(uint16_t ui16freq);
+#endif
 
 extern float ReadThermistor(void);
 

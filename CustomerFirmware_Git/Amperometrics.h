@@ -56,7 +56,11 @@ extern void CleanAmperometrics_CurrentLimited(int8_t Ref_drift, uint16_t Cal_Num
 extern void CleanAmperometricsSweep(int8_t Ref_drift);
 #endif
 
+#ifdef CONST_COND_FREQ
 extern float ConductivityMovingAvg(void);
+#else
+extern float ConductivityMovingAvg(uint16_t ui16freq);
+#endif
 
 #ifndef COND_SOLUTION_STRUCT
 extern float MeasureConductivity(float Cond_EEP_Rinse, float Cond_EEP_Cal_2, uint8_t Test_Number);
@@ -83,7 +87,7 @@ extern void CleanAmperometrics_CurrentLimited_CCOROnly(int8_t Ref_drift, uint16_
 #ifdef TESTING_MODE
 extern float ReadRefGuard(float fSec);
 
-extern void CleanCond(void);
+//extern void CleanCond(void);
 #endif
 
 #endif /* AMPEROMETRICS_H_ */

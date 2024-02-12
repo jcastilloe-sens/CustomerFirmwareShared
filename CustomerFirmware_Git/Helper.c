@@ -230,7 +230,12 @@ void Init_all(uint8_t Steppers)
 				InitDAC();			// Resets device and writes configuration register
 				InitTurbidityADC();
 				InitADC();			// Resets devices and configures all channels
+#ifdef CONST_COND_FREQ
 				InitWaveGen(0);		// Sets up waveform generator to output at 1 kHz
+
+#else
+				InitWaveGen(0, COND_FREQ);		// Sets up waveform generator to output at 1 kHz
+#endif
 			}
 
 		}
@@ -253,7 +258,11 @@ void Init_all(uint8_t Steppers)
 			InitDAC();			// Resets device and writes configuration register
 			InitTurbidityADC();
 			InitADC();			// Resets devices and configures all channels
+#ifdef CONST_COND_FREQ
 			InitWaveGen(0);		// Sets up waveform generator to output at 1 kHz
+#else
+			InitWaveGen(0, COND_FREQ);		// Sets up waveform generator to output at 1 kHz
+#endif
 		}
 
 		InitCPUTemp();		// Initializes ADC to read temperature select channel
@@ -1500,7 +1509,11 @@ void InitAnalog(void)
 	InitDAC();				// Resets device and writes configuration register
 	InitTurbidityADC();		// Configures ADC that checks conductivity frequency and will read turbidity
 	InitADC();				// Resets devices and configures all channels
+#ifdef CONST_COND_FREQ
 	InitWaveGen(0);			// Sets up waveform generator to output at 1 kHz
+#else
+	InitWaveGen(0, COND_FREQ);			// Sets up waveform generator to output at 1 kHz
+#endif
 }
 
 //**************************************************************************

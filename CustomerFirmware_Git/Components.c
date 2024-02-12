@@ -2446,6 +2446,7 @@ unsigned int BatteryRead(uint8_t ui8Register)
 	return reg_val;
 }
 
+#ifdef CONST_COND_FREQ
 //**************************************************************************
 // Initializes waveform generator to 1 kHz or 100 Hz, leaves reset bit set
 // Parameters:	Check_freq; 1 to check that frequency set correctly, 0 to skip
@@ -2634,6 +2635,197 @@ void InitWaveGen(uint8_t Check_freq)
 //	}
 
 }
+#else
+//**************************************************************************
+// Initializes waveform generator to 1 kHz or 100 Hz, leaves reset bit set
+// Parameters:	Check_freq; 1 to check that frequency set correctly, 0 to skip
+//**************************************************************************
+void InitWaveGen(uint8_t Check_freq, uint16_t ui16freq)
+{
+	while(SSIBusy(SSI1_BASE)){} // Wait for SSI to finish transferring before raising SS pin
+
+	// Set SPI communication to capture on falling edge of clock (ADC captures on rising edge)
+	SSIDisable(SSI1_BASE);
+	SSIConfigSetExpClk(SSI1_BASE, SysCtlClockGet(), SSI_FRF_MOTO_MODE_2, SSI_MODE_MASTER, SPI_CLOCK, 8);
+	SSIEnable(SSI1_BASE);
+
+	uint8_t Check = 0;
+	uint8_t Counter = 0;
+
+	// Set low current range
+	// 10.7 uApp R = 309k + 499k = 808k
+	IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 0);
+	IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 0);
+
+	while(Check == 0 && Counter <= 10)
+	{
+		//0x21 0x00: Write to control register to turn on reset bit
+		//0x54 0xF9: Write to frequency LSB register: (0x54 0xF9 for 100 Hz)(0x51 0xB7 for 1 kHz)
+		//0x40 0x00: Write to frequency MSB register: (0x40 0x00 for 100 Hz)(0x40 0x03 for 1 kHz)
+		//0xC0 0x00: Write to phase register, 0 for no offset
+		//0x20 0x00: Write to control register to turn off reset bit: taken care of in WaveGetSet() function
+//		SPISend(SSI1_BASE, 1, WAVE_GEN_CS_B, 0, 8, 0x21, 0x00, 0x54, 0xF9, 0x40, 0x00, 0xC0, 0x00);	// 100 Hz
+//		SPISend(SSI1_BASE, 1, WAVE_GEN_CS_B, 0, 8, 0x21, 0x00, 0x51, 0xB7, 0x40, 0x03, 0xC0, 0x00);	// 1 kHz
+//		SPISend(SSI1_BASE, 1, WAVE_GEN_CS_B, 0, 8, 0x21, 0x00, 0x58, 0x93, 0x40, 0x10, 0xC0, 0x00);	// 5 kHz
+
+		uint32_t Freq_Reg = ((float) ui16freq / 5000000.0 * 268435456.0);
+		SPISend(SSI1_BASE, 1, WAVE_GEN_CS_B, 0, 8, 0x21, 0x00, (Freq_Reg >> 8 & 0x3F) | 0x40, (Freq_Reg & 0xFF), (Freq_Reg >> 22 & 0x3F) | 0x40, (Freq_Reg >> 14 & 0xFF), 0xC0, 0x00);	// 5 kHz
+
+		if(Check_freq == 0)
+			break;
+
+		if(gABoard >= AV6_6)
+		{
+			WaveGenSet(1);
+
+			Check = CheckCond(COND_FREQ);
+
+			WaveGenSet(0);
+
+			if(Counter < 3)
+				Counter++;
+			else if(Counter == 3)
+			{
+				DEBUG_PRINT(
+				UARTprintf("Tried initializing waveform generator 5 times, not showing %d Hz!\n", ui16freq);
+				UARTprintf("Resetting analog board!\n");
+				)
+
+				AnalogOff();
+
+				userDelay(1000, 1);
+
+#ifdef MCU_ZXR
+				GPIOPinWrite(IO_RESET_ANALOG_BASE, IO_RESET_ANALOG_PIN, IO_RESET_ANALOG_PIN); // Analog Reset Set high for normal operation
+
+				// Set pin low, turn on analog board, then set high
+				GPIOPinWrite(IO_COND_ADC_CNV_BASE, IO_COND_ADC_CNV_PIN, 0x00); // Conductivity ADC CNV Pin _B
+				GPIOPinWrite(IO_ANALOG_ON_BASE, IO_ANALOG_ON_PIN, IO_ANALOG_ON_PIN); // Analog On
+
+				SysCtlDelay(SysCtlClockGet()/3000 * 7);	// Wait 7 ms after powering up analog board, this is ADCs startup time which is slowest component
+
+				// Need to set conductivity ADC pin high after powering on analog board so it sees rising edge
+				if(gABoard >= AV6_1)
+					GPIOPinWrite(IO_COND_ADC_CNV_BASE, IO_COND_ADC_CNV_PIN, IO_COND_ADC_CNV_PIN); // Conductivity ADC CNV Pin
+				else
+					GPIOPinWrite(IO_COND_ADC_CNV_BASE, IO_COND_ADC_CNV_PIN, 0x00); // Conductivity ADC CNV Pin
+
+				// Toggle Reset Pin
+				GPIOPinWrite(IO_RESET_ANALOG_BASE, IO_RESET_ANALOG_PIN, 0); // Reset is active low, send pulse at startup to reset IO extenders and DAC
+				SysCtlDelay(SysCtlClockGet()/3000);	// Delay 1ms
+				GPIOPinWrite(IO_RESET_ANALOG_BASE, IO_RESET_ANALOG_PIN, IO_RESET_ANALOG_PIN); // Set high for normal operation
+				SysCtlDelay(SysCtlClockGet()/3000);	// Delay 1ms
+
+				if(gBoard == V6_2 || gBoard == V6_3)
+				{
+					// Raise extender reset line to activate device, specs say device active after reset = 0 ns @ 5V
+					GPIOPinWrite(IO_LED_EXT_CS_B_BASE, IO_LED_EXT_CS_B_PIN, IO_LED_EXT_CS_B_PIN); // LED Ext CS _B	// Make sure CS_B is high, will only be low if resetting analog board on V6_2 and V6_3
+					GPIOPinWrite(IO_LED_EXT_RST_B_BASE, IO_LED_EXT_RST_B_PIN, IO_LED_EXT_RST_B_PIN); // LED Ext RST _B
+				}
+#else
+				GPIOPinWrite(GPIO_PORTD_BASE, GPIO_PIN_7, GPIO_PIN_7); // Analog Reset Set high for normal operation
+
+				// Set pin low, turn on analog board, then set high
+				GPIOPinWrite(GPIO_PORTD_BASE, GPIO_PIN_2, 0x00); // Conductivity ADC CNV Pin _B
+				GPIOPinWrite(GPIO_PORTD_BASE, GPIO_PIN_6, GPIO_PIN_6); // Analog On
+
+				SysCtlDelay(SysCtlClockGet()/3000 * 7);	// Wait 7 ms after powering up analog board, this is ADCs startup time which is slowest component
+
+				// Need to set conductivity ADC pin high after powering on analog board so it sees rising edge
+				if(gABoard >= AV6_1)
+					GPIOPinWrite(GPIO_PORTD_BASE, GPIO_PIN_2, GPIO_PIN_2); // Conductivity ADC CNV Pin
+				else
+					GPIOPinWrite(GPIO_PORTD_BASE, GPIO_PIN_2, 0x00); // Conductivity ADC CNV Pin
+
+				// Toggle Reset Pin
+				GPIOPinWrite(GPIO_PORTD_BASE, GPIO_PIN_7, 0); // Reset is active low, send pulse at startup to reset IO extenders and DAC
+				SysCtlDelay(SysCtlClockGet()/3000);	// Delay 1ms
+				GPIOPinWrite(GPIO_PORTD_BASE, GPIO_PIN_7, GPIO_PIN_7); // Set high for normal operation
+				SysCtlDelay(SysCtlClockGet()/3000);	// Delay 1ms
+
+				if(gBoard == V6_2 || gBoard == V6_3)
+				{
+					// Raise extender reset line to activate device, specs say device active after reset = 0 ns @ 5V
+					GPIOPinWrite(GPIO_PORTD_BASE, GPIO_PIN_1, GPIO_PIN_1); // LED Ext CS _B	// Make sure CS_B is high, will only be low if resetting analog board on V6_2 and V6_3
+					GPIOPinWrite(GPIO_PORTD_BASE, GPIO_PIN_0, GPIO_PIN_0); // LED Ext RST _B
+				}
+#endif
+				InitIO_Ext();		// Sets up IO Extenders and sets initial values
+
+				if(gBoard == V6_2 || gBoard == V6_3)
+					InitLED_Ext();
+				else
+					SetLED(0, 1);
+
+				InitDAC();			// Resets device and writes configuration register
+				InitTurbidityADC();
+				InitADC();			// Resets devices and configures all channels
+
+				// Set SPI communication to capture on falling edge of clock (ADC captures on rising edge)
+				SSIDisable(SSI1_BASE);
+				SSIConfigSetExpClk(SSI1_BASE, SysCtlClockGet(), SSI_FRF_MOTO_MODE_2, SSI_MODE_MASTER, SPI_CLOCK, 8);
+				SSIEnable(SSI1_BASE);
+
+				Counter++;
+			}
+			else if(Counter < 10)
+				Counter++;
+			else if(Counter == 10)
+			{
+				DEBUG_PRINT(
+				UARTprintf("Tried initializing waveform generator 10 times, not showing %d Hz!\n", ui16freq);
+				UARTprintf("Setting error and leaving initialization!\n");
+				)
+				gui32Error |= WAVE_GEN_FAIL;
+				update_Error();
+
+				Counter++;
+			}
+		}
+		else
+			Check = 1;
+	}
+
+	// Set SPI communication polarity back to idle low after talking to waveform generator
+	SSIDisable(SSI1_BASE);
+	SSIConfigSetExpClk(SSI1_BASE, SysCtlClockGet(), SSI_FRF_MOTO_MODE_1, SSI_MODE_MASTER, SPI_CLOCK, 8);
+	SSIEnable(SSI1_BASE);
+
+
+//	if(gCartridge > 0)
+//	{
+//		// Measure conductivity
+//		// Set RE and CE floating and close RE/CE loop for conductivity
+//		IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWA, 1);
+//		IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWB, 0);
+//
+//		// Set high current range
+//		// 45 uApp R = 180k
+//		IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 0);
+//		IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 1);
+//
+//		float CondReading_1 = ConductivityMovingAvg();
+//
+//		WaveGenSet(1);
+//
+//		float CondReading_2 = ConductivityMovingAvg();
+//
+//		WaveGenSet(0);	// Turn off waveform generator when switching ranges
+//
+////		UARTprintf("Cond: %d, %d\n", (int) CondReading_1, (int) CondReading_2);
+//		//
+//		if(CondReading_2 * .9 <= CondReading_1)
+//		{
+//			UARTprintf("Waveform gen failed check!\n");
+//
+//			gui32Error |= WAVE_GEN_FAIL;
+//			update_Error();
+//		}
+//	}
+
+}
+#endif
+
 
 //**************************************************************************
 // Turn on or off the waveform generator by controlling clock source and
@@ -4995,6 +5187,7 @@ void SetLED(uint16_t LED, uint8_t state)
 //	return 1;
 //}
 
+#ifdef CONST_COND_FREQ
 //**************************************************************************
 // Uses ADC 5 to verify the waveform generator is running at 1 kHz
 // ADS114S06
@@ -5319,6 +5512,333 @@ uint8_t CheckCond(void)
 
 	return 1;
 }
+#else
+//**************************************************************************
+// Uses ADC 5 to verify the waveform generator is running at specified frequency
+// ADS114S06
+// Created 7/2/2019
+// 11/2/2020; Modified to setup channels on ADC, thermistor using another channel
+// 12/14/2023: Changed the alorithm to count the number of times the signal changes
+// 2/7/2024: Giving expected frequency as input
+// direction and use that to calculate frequency. Works for anything 2 kHz or less
+// added a condition that should make multiples with remainders less than .5 work... at least 5 kHz works
+// Parameters:	NONE
+// Returns:		1 if waveform generator is working, 0 if not seeing 1 kHz signal
+//**************************************************************************
+uint8_t CheckCond(uint16_t ui16freq)
+{
+	if(gABoard >= AV6_6)
+	{
+		DEBUG_PRINT(
+		if(gDiagnostics >= 1)
+			UARTprintf("Checking waveform generator!\n");
+		)
+
+		uint8_t attempts = 0;
+		uint16_t Non_Zero_counter = 0;	// Count up how many times ADC returns something besides 0 to make sure its working
+		uint16_t frequency;
+
+		while(SSIBusy(SSI1_BASE)){} // Wait for SSI to finish transferring before raising SS pin
+
+		// Set SPI communication to mode 1 for ADC5, capturing on the falling edge
+		SSIDisable(SSI1_BASE);
+		SSIConfigSetExpClk(SSI1_BASE, SysCtlClockGet(), SSI_FRF_MOTO_MODE_1, SSI_MODE_MASTER, SPI_CLOCK, 8);
+		SSIEnable(SSI1_BASE);
+
+		while(attempts < 3 && Non_Zero_counter < 3000)
+		{
+			attempts++;
+			uint32_t bits07 = 0, bits815 = 0;
+			int16_t Data = 0;
+
+			while(SSIBusy(SSI1_BASE)){} // Wait for SSI to finish transferring before raising SS pin
+
+			// Set SPI communication to mode 1 for ADC5, capturing on the falling edge
+			SSIDisable(SSI1_BASE);
+			SSIConfigSetExpClk(SSI1_BASE, SysCtlClockGet(), SSI_FRF_MOTO_MODE_1, SSI_MODE_MASTER, SPI_CLOCK, 8);
+			SSIEnable(SSI1_BASE);
+
+			SPISend(SSI1_BASE, 2, ADC5_CS_B, 0, 1, 0x02);	// Send wakeup command to ADC
+
+			//
+			// After waking ADC setup input channel to COND_AC_DRV, and set data rate
+			//
+			uint32_t InMux_Rx = 0, DataRate_Rx = 0;
+			uint8_t counter = 0;
+
+			while((InMux_Rx != 0x4C || DataRate_Rx != 0x1E) && counter <= 10)
+			{
+				// Write register 010r rrrr
+				// Read register 001r rrrr
+
+				// Input Multiplexer register 0x02, write = 0x42, read = 0x22
+				SPISend(SSI1_BASE, 2, ADC5_CS_B, 0, 3, 0x42, 0x00, 0x4C);	// Set positive input to AIN 4 (0100 = 0x4) (COND ADC DR), negative input to AINCOM (1100 = 0xC) (GND)
+				SPISend(SSI1_BASE, 2, ADC5_CS_B, 0, 3, 0x22, 0x00, 0x00);	// Set positive input to AIN 4 (0100 = 0x4) (COND ADC DR), negative input to AINCOM (1100 = 0xC) (GND)
+
+				SSIDataGet(SSI1_BASE, &InMux_Rx);
+				SSIDataGet(SSI1_BASE, &InMux_Rx);
+				SSIDataGet(SSI1_BASE, &InMux_Rx);
+
+				//		UARTprintf("Input mux = %x\n", InMux_Rx);
+
+				// Data rate register 0x04, write = 0x44, read = 0x24
+				SPISend(SSI1_BASE, 2, ADC5_CS_B, 0, 3, 0x44, 0x00, 0x1E);	// Set low latency filter 0x10, Set 2000 SPS data rate 0x0C, 4000 SPS data rate 0x0E
+				SPISend(SSI1_BASE, 2, ADC5_CS_B, 0, 3, 0x24, 0x00, 0x00);	// Read back data rate register
+
+				SSIDataGet(SSI1_BASE, &DataRate_Rx);
+				SSIDataGet(SSI1_BASE, &DataRate_Rx);
+				SSIDataGet(SSI1_BASE, &DataRate_Rx);
+
+				//		UARTprintf("Data rate = %x\n", DataRate_Rx);
+
+				if(counter < 5)
+					counter++;
+				else if(counter == 5 && (InMux_Rx != 0x4C || DataRate_Rx != 0x1E))
+				{
+					counter++;
+
+					DEBUG_PRINT(
+					UARTprintf("Tried writing ADC 5 registers 5 times, not writing!\n");
+					UARTprintf("InMux Rx = %x, should be 0x4c\n");
+					UARTprintf("Data rate Rx = %x, should be 0x1c\n");
+					UARTprintf("Resetting analog board!\n");
+					)
+
+					AnalogOff();
+
+					userDelay(1000, 1);
+
+#ifdef MCU_ZXR
+					GPIOPinWrite(IO_RESET_ANALOG_BASE, IO_RESET_ANALOG_PIN, IO_RESET_ANALOG_PIN); // Analog Reset Set high for normal operation
+
+					// Set pin low, turn on analog board, then set high
+					GPIOPinWrite(IO_COND_ADC_CNV_BASE, IO_COND_ADC_CNV_PIN, 0x00); // Conductivity ADC CNV Pin _B
+					GPIOPinWrite(IO_ANALOG_ON_BASE, IO_ANALOG_ON_PIN, IO_ANALOG_ON_PIN); // Analog On
+
+					SysCtlDelay(SysCtlClockGet()/3000 * 7);	// Wait 7 ms after powering up analog board, this is ADCs startup time which is slowest component
+
+					// Need to set conductivity ADC pin high after powering on analog board so it sees rising edge
+					if(gABoard >= AV6_1)
+						GPIOPinWrite(IO_COND_ADC_CNV_BASE, IO_COND_ADC_CNV_PIN, IO_COND_ADC_CNV_PIN); // Conductivity ADC CNV Pin
+					else
+						GPIOPinWrite(IO_COND_ADC_CNV_BASE, IO_COND_ADC_CNV_PIN, 0x00); // Conductivity ADC CNV Pin
+
+					// Toggle Reset Pin
+					GPIOPinWrite(IO_RESET_ANALOG_BASE, IO_RESET_ANALOG_PIN, 0); // Reset is active low, send pulse at startup to reset IO extenders and DAC
+					SysCtlDelay(SysCtlClockGet()/3000);	// Delay 1ms
+					GPIOPinWrite(IO_RESET_ANALOG_BASE, IO_RESET_ANALOG_PIN, IO_RESET_ANALOG_PIN); // Set high for normal operation
+					SysCtlDelay(SysCtlClockGet()/3000);	// Delay 1ms
+
+					if(gBoard == V6_2 || gBoard == V6_3)
+					{
+						// Raise extender reset line to activate device, specs say device active after reset = 0 ns @ 5V
+						GPIOPinWrite(IO_LED_EXT_CS_B_BASE, IO_LED_EXT_CS_B_PIN, IO_LED_EXT_CS_B_PIN); // LED Ext CS _B	// Make sure CS_B is high, will only be low if resetting analog board on V6_2 and V6_3
+						GPIOPinWrite(IO_LED_EXT_RST_B_BASE, IO_LED_EXT_RST_B_PIN, IO_LED_EXT_RST_B_PIN); // LED Ext RST _B
+					}
+#else
+					GPIOPinWrite(GPIO_PORTD_BASE, GPIO_PIN_7, GPIO_PIN_7); // Analog Reset Set high for normal operation
+
+					// Set pin low, turn on analog board, then set high
+					GPIOPinWrite(GPIO_PORTD_BASE, GPIO_PIN_2, 0x00); // Conductivity ADC CNV Pin _B
+					GPIOPinWrite(GPIO_PORTD_BASE, GPIO_PIN_6, GPIO_PIN_6); // Analog On
+
+					SysCtlDelay(SysCtlClockGet()/3000 * 7);	// Wait 7 ms after powering up analog board, this is ADCs startup time which is slowest component
+
+					// Need to set conductivity ADC pin high after powering on analog board so it sees rising edge
+					if(gABoard >= AV6_1)
+						GPIOPinWrite(GPIO_PORTD_BASE, GPIO_PIN_2, GPIO_PIN_2); // Conductivity ADC CNV Pin
+					else
+						GPIOPinWrite(GPIO_PORTD_BASE, GPIO_PIN_2, 0x00); // Conductivity ADC CNV Pin
+
+					// Toggle Reset Pin
+					GPIOPinWrite(GPIO_PORTD_BASE, GPIO_PIN_7, 0); // Reset is active low, send pulse at startup to reset IO extenders and DAC
+					SysCtlDelay(SysCtlClockGet()/3000);	// Delay 1ms
+					GPIOPinWrite(GPIO_PORTD_BASE, GPIO_PIN_7, GPIO_PIN_7); // Set high for normal operation
+					SysCtlDelay(SysCtlClockGet()/3000);	// Delay 1ms
+
+					if(gBoard == V6_2 || gBoard == V6_3)
+					{
+						// Raise extender reset line to activate device, specs say device active after reset = 0 ns @ 5V
+						GPIOPinWrite(GPIO_PORTD_BASE, GPIO_PIN_1, GPIO_PIN_1); // LED Ext CS _B	// Make sure CS_B is high, will only be low if resetting analog board on V6_2 and V6_3
+						GPIOPinWrite(GPIO_PORTD_BASE, GPIO_PIN_0, GPIO_PIN_0); // LED Ext RST _B
+					}
+#endif
+
+					InitIO_Ext();		// Sets up IO Extenders and sets initial values
+
+					if(gBoard == V6_2 || gBoard == V6_3)
+						InitLED_Ext();
+					else
+						SetLED(0, 1);
+
+					InitDAC();			// Resets device and writes configuration register
+
+					// Set SPI communication to mode 1 for ADC5, capturing on the falling edge
+					SSIDisable(SSI1_BASE);
+					SSIConfigSetExpClk(SSI1_BASE, SysCtlClockGet(), SSI_FRF_MOTO_MODE_1, SSI_MODE_MASTER, SPI_CLOCK, 8);
+					SSIEnable(SSI1_BASE);
+				}
+				else if(counter < 10)
+					counter++;
+				else if(counter == 10 && (InMux_Rx != 0x4C || DataRate_Rx != 0x1E))
+				{
+					DEBUG_PRINT(UARTprintf("ADC5 failed to initialize input mux or data rate!\nUpdating error and moving on!\n");)
+					counter++;
+					gui32Error |= ADC5_FAIL;
+					update_Error();
+				}
+			}
+
+			//
+			// Once ADC is setup, do the actual measurement
+			//
+			while(SSIDataGetNonBlocking(SSI1_BASE, &bits07)); // Clear FIFO
+
+			IO_Ext_Set(IO_EXT2_ADDR, 2, ADC5_CS_B, 0);	// Set CS_B low while sending/receiving data from ADC5
+			IO_Ext_Set(IO_EXT2_ADDR, 2, ADC5_START, 1);
+
+			SysCtlDelay(SysCtlClockGet()/3000);	// Wait 2 ms after raising start pin
+
+			g_TimerPeriodicInterruptFlag = 0;
+			TimerLoadSet(TIMER1_BASE, TIMER_A, 6250); // Set periodic timer
+			TimerEnable(TIMER1_BASE, TIMER_A);
+
+			uint16_t i;
+			float Voltage[2];
+//			uint32_t Cross_zero = 0;
+			uint16_t count = 0;
+			uint8_t Direction = 0; // Flag to indicate the direction we are moving
+			for(i = 0; i < 4001; i++)
+			{
+				//					while(g_TimerPeriodicInterruptFlag == 0);
+				while(g_TimerPeriodicInterruptFlag == 0)
+				{
+					// Poll if BT wants to use I2C, if it does reconnect memory and leave it connected, this will make the signal more noisy during this read but
+					// it will prevent the BT from reading incorrect data into the app, TODO: Redesign app to wait for data rather than write read move on
+#ifdef MCU_ZXR
+					if(GPIOPinRead(IO_I2C_USED_BY_BT_BASE, IO_I2C_USED_BY_BT_PIN) == IO_I2C_USED_BY_BT_PIN && gui8MemConnected == 0)
+						ConnectMemory(1);
+#else
+					if(GPIOPinRead(GPIO_PORTA_BASE, GPIO_PIN_6) == GPIO_PIN_6 && gui8MemConnected == 0)
+						ConnectMemory(1);
+#endif
+				}
+				g_TimerPeriodicInterruptFlag = 0;
+
+				SSIDataPut(SSI1_BASE, 0x12); // Send read data command
+				while(SSIBusy(SSI1_BASE)){} // Wait for SSI to finish transferring before raising SS pin
+				SSIDataGet(SSI1_BASE, &bits07);
+
+				SSIDataPut(SSI1_BASE, 0x00); // Send read data command
+				while(SSIBusy(SSI1_BASE)){} // Wait for SSI to finish transferring before raising SS pin
+				SSIDataPut(SSI1_BASE, 0x00); // Send read data command
+				while(SSIBusy(SSI1_BASE)){} // Wait for SSI to finish transferring before raising SS pin
+
+				SSIDataGet(SSI1_BASE, &bits815);
+				SSIDataGet(SSI1_BASE, &bits07);
+
+				Data = bits07 | (bits815 << 8);
+				if(Data != 0)
+					Non_Zero_counter++;
+				Voltage[i & 1] = ((Data * 2.0 * 3000.0 / 65536.0) - 1500) * 2;
+
+//				// Check that data crossed zero
+//				if(i > 0)
+//					if((Voltage[0] * Voltage[1]) < 0)	// If sign changed this will be negative
+//						Cross_zero++;	// Count number of times it crosses zero to calculate frequency
+
+//				// Check that voltage is increasing, should happen twice every cycle (, switched to this because AC divider wasn't centered on 1.5V like voltage shifter was
+//				if(i & 1)
+//				{
+//					if(Voltage[1] > Voltage[0])
+//						count++;
+//				}
+//				else
+//				{
+//					if(Voltage[0] > Voltage[1])
+//						count++;
+//				}
+
+				// 12/14/2023: Changing to counting direction changes... the previous method was specific to 1kHz sample...
+				// count will now be the number of times it changes direction... this should happen twice per cycle
+				if(Voltage[i & 1] - Voltage[1 - (i & 1)] >= 0)	// Current reading - previous reading, > 0 (increasing)
+				{
+					if(Direction != 1)
+					{
+						Direction = 1;
+						count++;	//
+					}
+				}
+				else	// Decreasing
+				{
+					if(Direction != 0)
+					{
+						Direction = 0;
+						count++;	//
+					}
+				}
+
+				//			SysCtlDelay(SysCtlClockGet()/6000);
+
+				//			UARTprintf("%d\n", (int) Voltage[i%2]);
+			}
+
+			TimerDisable(TIMER1_BASE, TIMER_A);
+			g_TimerPeriodicInterruptFlag = 0;
+
+//			frequency = Cross_zero / 2;
+//			if(gDiagnostics >= 1)
+//				UARTprintf("Frequency = %d\n", frequency);
+
+			frequency = count / 2;	// Dividing by 2 because the event I'm looking for happens twice per cycle
+
+			frequency += 4000 * (int) (ui16freq / 4000);
+
+			DEBUG_PRINT(UARTprintf("Frequency = %d\n", frequency);)
+
+			IO_Ext_Set(IO_EXT2_ADDR, 2, ADC5_START, 0);
+			IO_Ext_Set(IO_EXT2_ADDR, 2, ADC5_CS_B, 1);	// Set CS_B high after completion
+
+			SPISend(SSI1_BASE, 2, ADC5_CS_B, 0, 1, 0x04);	// Send power-down command to ADC
+
+			if(Non_Zero_counter < 3000 && attempts < 3)
+			{
+				DEBUG_PRINT(
+				UARTprintf("Conductivity frequency check ADC returned 0s!\n");
+				UARTprintf("Resetting Analog Board!\n");
+				)
+
+				AnalogOff();
+
+				SysCtlDelay(SysCtlClockGet()/3);	// Wait to give analog board time to power-down before turning back on
+
+				InitAnalog();
+			}
+		}
+
+		if(Non_Zero_counter < 3000 && attempts == 3)
+		{
+			gui32Error |= ADC5_FAIL;
+			update_Error();
+			DEBUG_PRINT(UARTprintf("Conductivity frequency check ADC always read 0's, updating error!\n");)
+		}
+
+//		WaveGenSet(0);	// Turn off waveform generator
+
+//		if(frequency >= 990 && frequency <= 1010)
+//			return 1;
+
+		if(frequency >= (ui16freq * .99) && frequency <= (ui16freq * 1.01))
+			return 1;
+
+		return 0;
+	}
+	else
+		userDelay(1000, 1);
+
+	return 1;
+}
+#endif
 
 //**************************************************************************
 // Uses ADC 5 to calculate resistance on thermistor and calculate temperature

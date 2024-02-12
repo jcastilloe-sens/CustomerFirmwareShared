@@ -337,6 +337,8 @@
 //		V01.03.17: Created 1/22/2024: Using Rinse as the middle point for the conductivity calibration, found it is more consistent than Clean
 //		V01.03.18: Created 1/30/2024: Moved all parameter calculations and saving to when they are measured so they can be reported in app ASAP
 //			2/1/2024: Send commands to BT to update Test and Cal data as it progresses
+//			2/7/2024: Changing low range conductivity intercpet to pass through 0, and RAV1 boards to run 1kHz first in the low range to check for DI
+//			2/12/2024: Rewrite previous calibrated status after running Cl cleaning during test to update flag directly in calibrations memory
 //*****************************************************************************
 #include <stdio.h>
 #include <stdint.h>
@@ -1002,11 +1004,11 @@ int main(void) {
 			{
 				RunTest = 1;
 			}
-			else if(CurTest % 3 == 0 && CurCal < 40 && (Test_Date > Cal_Date))
+			else if(CurTest % 3 == 0 && CurCal < 30 && (Test_Date > Cal_Date))
 			{
 				RunCal = 1;
 			}
-			else if(CurTest < 120)
+			else if(CurTest < 100)
 			{
 //				if(CurTest == 50)
 //				{
@@ -2468,7 +2470,7 @@ int main(void) {
 							{
 								WaveGenSet(1);
 
-								Check = CheckCond();
+								Check = CheckCond(COND_FREQ);
 								if(attempt == 5)
 								{
 									gui32Error |= WAVE_GEN_FAIL;
@@ -2477,12 +2479,12 @@ int main(void) {
 
 								if(Check != 1)
 								{
-									InitWaveGen(1);
+									InitWaveGen(1, COND_FREQ);
 									attempt++;
 								}
 							}
 
-							CalConductivityV3High = ConductivityMovingAvg();
+							CalConductivityV3High = ConductivityMovingAvg(COND_FREQ);
 
 
 
@@ -2547,7 +2549,7 @@ int main(void) {
 							{
 								WaveGenSet(1);
 
-								Check = CheckCond();
+								Check = CheckCond(COND_FREQ);
 								if(attempt == 5)
 								{
 									gui32Error |= WAVE_GEN_FAIL;
@@ -2556,12 +2558,12 @@ int main(void) {
 
 								if(Check != 1)
 								{
-									InitWaveGen(1);
+									InitWaveGen(1, COND_FREQ);
 									attempt++;
 								}
 							}
 
-							CalConductivityV2Low = ConductivityMovingAvg();
+							CalConductivityV2Low = ConductivityMovingAvg(COND_FREQ);
 
 							WaveGenSet(0);	// Turn off waveform generator when switching ranges
 
@@ -2590,7 +2592,7 @@ int main(void) {
 							{
 								WaveGenSet(1);
 
-								Check = CheckCond();
+								Check = CheckCond(COND_FREQ);
 								if(attempt == 5)
 								{
 									gui32Error |= WAVE_GEN_FAIL;
@@ -2599,12 +2601,12 @@ int main(void) {
 
 								if(Check != 1)
 								{
-									InitWaveGen(1);
+									InitWaveGen(1, COND_FREQ);
 									attempt++;
 								}
 							}
 
-							CalConductivityV1Mid = ConductivityMovingAvg();
+							CalConductivityV1Mid = ConductivityMovingAvg(COND_FREQ);
 
 							WaveGenSet(0);	// Turn off waveform generator
 						}
@@ -2782,7 +2784,7 @@ int main(void) {
 						{
 							WaveGenSet(1);
 
-							Check = CheckCond();
+							Check = CheckCond(COND_FREQ);
 							if(attempt == 5)
 							{
 								gui32Error |= WAVE_GEN_FAIL;
@@ -2791,12 +2793,12 @@ int main(void) {
 
 							if(Check != 1)
 							{
-								InitWaveGen(1);
+								InitWaveGen(1, COND_FREQ);
 								attempt++;
 							}
 						}
 
-						CalConductivityV2Mid = ConductivityMovingAvg();
+						CalConductivityV2Mid = ConductivityMovingAvg(COND_FREQ);
 //						Rinse_Cond_Mid_Raw = ConductivityMovingAvg();
 
 						WaveGenSet(0);	// Turn off waveform generator when switching ranges
@@ -2826,7 +2828,7 @@ int main(void) {
 						{
 							WaveGenSet(1);
 
-							Check = CheckCond();
+							Check = CheckCond(COND_FREQ);
 							if(attempt == 5)
 							{
 								gui32Error |= WAVE_GEN_FAIL;
@@ -2835,12 +2837,12 @@ int main(void) {
 
 							if(Check != 1)
 							{
-								InitWaveGen(1);
+								InitWaveGen(1, COND_FREQ);
 								attempt++;
 							}
 						}
 
-						CalConductivityV2High = ConductivityMovingAvg();
+						CalConductivityV2High = ConductivityMovingAvg(COND_FREQ);
 //						Rinse_Cond_High_Raw = ConductivityMovingAvg();
 
 						WaveGenSet(0);	// Turn off waveform generator
@@ -3053,7 +3055,7 @@ int main(void) {
 									{
 										WaveGenSet(1);
 
-										Check = CheckCond();
+										Check = CheckCond(COND_FREQ);
 										if(attempt == 5)
 										{
 											gui32Error |= WAVE_GEN_FAIL;
@@ -3062,13 +3064,13 @@ int main(void) {
 
 										if(Check != 1)
 										{
-											InitWaveGen(1);
+											InitWaveGen(1, COND_FREQ);
 											attempt++;
 										}
 									}
 
 
-									float Clean_Cond_Mid_Raw = ConductivityMovingAvg();
+									float Clean_Cond_Mid_Raw = ConductivityMovingAvg(COND_FREQ);
 
 									WaveGenSet(0);	// Turn off waveform generator when switching ranges
 
@@ -3097,7 +3099,7 @@ int main(void) {
 									{
 										WaveGenSet(1);
 
-										Check = CheckCond();
+										Check = CheckCond(COND_FREQ);
 										if(attempt == 5)
 										{
 											gui32Error |= WAVE_GEN_FAIL;
@@ -3106,12 +3108,12 @@ int main(void) {
 
 										if(Check != 1)
 										{
-											InitWaveGen(1);
+											InitWaveGen(1, COND_FREQ);
 											attempt++;
 										}
 									}
 
-									float Clean_Cond_High_Raw = ConductivityMovingAvg();
+									float Clean_Cond_High_Raw = ConductivityMovingAvg(COND_FREQ);
 
 
 									WaveGenSet(0);	// Turn off waveform generator
@@ -3408,7 +3410,7 @@ int main(void) {
 							{
 								WaveGenSet(1);
 
-								Check = CheckCond();
+								Check = CheckCond(COND_FREQ);
 								if(attempt == 5)
 								{
 									gui32Error |= WAVE_GEN_FAIL;
@@ -3417,12 +3419,12 @@ int main(void) {
 
 								if(Check != 1)
 								{
-									InitWaveGen(1);
+									InitWaveGen(1, COND_FREQ);
 									attempt++;
 								}
 							}
 
-							CalConductivityV2Low = ConductivityMovingAvg();
+							CalConductivityV2Low = ConductivityMovingAvg(COND_FREQ);
 
 							WaveGenSet(0);	// Turn off waveform generator when switching ranges
 
@@ -3451,7 +3453,7 @@ int main(void) {
 							{
 								WaveGenSet(1);
 
-								Check = CheckCond();
+								Check = CheckCond(COND_FREQ);
 								if(attempt == 5)
 								{
 									gui32Error |= WAVE_GEN_FAIL;
@@ -3460,12 +3462,12 @@ int main(void) {
 
 								if(Check != 1)
 								{
-									InitWaveGen(1);
+									InitWaveGen(1, COND_FREQ);
 									attempt++;
 								}
 							}
 
-							CalConductivityV1Mid = ConductivityMovingAvg();
+							CalConductivityV1Mid = ConductivityMovingAvg(COND_FREQ);
 
 							WaveGenSet(0);	// Turn off waveform generator
 						}
@@ -3497,7 +3499,7 @@ int main(void) {
 							{
 								WaveGenSet(1);
 
-								Check = CheckCond();
+								Check = CheckCond(COND_FREQ);
 								if(attempt == 5)
 								{
 									gui32Error |= WAVE_GEN_FAIL;
@@ -3506,12 +3508,12 @@ int main(void) {
 
 								if(Check != 1)
 								{
-									InitWaveGen(1);
+									InitWaveGen(1, COND_FREQ);
 									attempt++;
 								}
 							}
 
-							CalConductivityV3High = ConductivityMovingAvg();
+							CalConductivityV3High = ConductivityMovingAvg(COND_FREQ);
 
 							WaveGenSet(0);	// Turn off waveform generator
 						}
@@ -3894,21 +3896,21 @@ int main(void) {
 						// Conductivity Calibration
 						//
 						// Adjust conductivity to use a fixed point at 61.8 of 270001.09 if factory cal wasn't read successfully
-						float CondLow;
-						float CalConductivityV1LowInv = Build_float(MemoryRead(PAGE_FACTORY_CAL, OFFSET_COND_READ_LOW_POINT, 4));
-						if(CalConductivityV1LowInv == CalConductivityV1LowInv)
-						{
-							CondLow = Build_float(MemoryRead(PAGE_FACTORY_CAL, OFFSET_COND_LOW_POINT_CAL, 4));
-							if(CalConductivityV1LowInv > 1)	// 8/9/2023: Factory Cal was done recording the mV difference, current adjust reading for new calibration
-								CalConductivityV1LowInv = (10.76 * 0.795) * 1000000 / CalConductivityV1LowInv;
-							else
-								CalConductivityV1LowInv *= 1000000;
-						}
-						else
-						{
-							CalConductivityV1LowInv = (10.76 * 0.795)  * 1000000 / (270001.09 * 2);
-							CondLow = 61.8;
-						}
+//						float CondLow;
+//						float CalConductivityV1LowInv = Build_float(MemoryRead(PAGE_FACTORY_CAL, OFFSET_COND_READ_LOW_POINT, 4));
+//						if(CalConductivityV1LowInv == CalConductivityV1LowInv)
+//						{
+//							CondLow = Build_float(MemoryRead(PAGE_FACTORY_CAL, OFFSET_COND_LOW_POINT_CAL, 4));
+//							if(CalConductivityV1LowInv > 1)	// 8/9/2023: Factory Cal was done recording the mV difference, current adjust reading for new calibration
+//								CalConductivityV1LowInv = (10.76 * 0.795) * 1000000 / CalConductivityV1LowInv;
+//							else
+//								CalConductivityV1LowInv *= 1000000;
+//						}
+//						else
+//						{
+//							CalConductivityV1LowInv = (10.76 * 0.795)  * 1000000 / (270001.09 * 2);
+//							CondLow = 61.8;
+//						}
 
 						float I_Low, I_Mid, I_High;
 
@@ -3951,10 +3953,11 @@ int main(void) {
 							float CalConds[3] = {Sols->Cond_EEP_Rinse*(1 + Sols->Rinse_Cond_TComp*(T_Cal - 25)), Sols->Cond_EEP_Cal_1*(1 + Sols->Cal_1_Cond_TComp*(T_Cal - 25)), Sols->Cond_EEP_Cal_2*(1 + Sols->Cal_2_Cond_TComp*(T_Cal - 25))};
 							SortArray(CalConds, 3);
 
-							CalConductivitySlopeLow =  (CalConductivityV2LowInv - CalConductivityV1LowInv) / (CalConds[0] - CondLow);
+//							CalConductivitySlopeLow =  (CalConductivityV2LowInv - CalConductivityV1LowInv) / (CalConds[0] - CondLow);
+							CalConductivitySlopeLow =  (CalConductivityV2LowInv) / (CalConds[0]);
 							CalConductivitySlopeMid = (CalConductivityV2MidInv - CalConductivityV1MidInv) / (CalConds[1] - CalConds[0]);
 							CalConductivitySlopeHigh = (CalConductivityV3HighInv - CalConductivityV2HighInv) / (CalConds[2] - CalConds[1]);
-							CalConductivityKLow = I_Low / CalConductivityV2Low - CalConductivitySlopeLow * CalConds[0]/1000000;
+							CalConductivityKLow = 0; //I_Low / CalConductivityV2Low - CalConductivitySlopeLow * CalConds[0]/1000000;
 							CalConductivityKMid = I_Mid / CalConductivityV2Mid - CalConductivitySlopeMid * CalConds[1]/1000000;
 							CalConductivityKHigh = I_High / CalConductivityV3High - CalConductivitySlopeHigh * CalConds[2]/1000000;
 						}
@@ -4405,7 +4408,7 @@ int main(void) {
 							DEBUG_PRINT(UARTprintf("Cond High\t%d\t%d\n\n", (int) (CalConductivityV2High * 1000), (int) (CalConductivityV3High * 1000));)
 
 							DEBUG_PRINT(UARTprintf("Raw Conductivity Data: \n");)
-							DEBUG_PRINT(UARTprintf("Cond Low\t%d\t%d\n", (int) (CalConductivityV1LowInv * 1000), (int) (CalConductivityV2LowInv * 1000));)
+							DEBUG_PRINT(UARTprintf("Cond Low\t0\t%d\n", (int) (CalConductivityV2LowInv * 1000));)
 							DEBUG_PRINT(UARTprintf("Cond Mid\t%d\t%d\n", (int) (CalConductivityV1MidInv * 1000), (int) (CalConductivityV2MidInv * 1000));)
 							DEBUG_PRINT(UARTprintf("Cond High\t%d\t%d\n\n", (int) (CalConductivityV2HighInv * 1000), (int) (CalConductivityV3HighInv * 1000));)
 
@@ -5198,7 +5201,7 @@ int main(void) {
 										uint8_t signal_doubled = 0;
 										uint8_t checkstep = 0;
 
-										float CondReading = ConductivityMovingAvg();
+										float CondReading = ConductivityMovingAvg(COND_FREQ);
 										float OldReading = CondReading;
 
 										DEBUG_PRINT(UARTprintf("Reading\t%d\n", (int) CondReading);)
@@ -5207,7 +5210,7 @@ int main(void) {
 											PumpVolume(FW, 2.75, Speed_ISE, 0);
 											checkstep++;
 
-											CondReading = ConductivityMovingAvg();
+											CondReading = ConductivityMovingAvg(COND_FREQ);
 											DEBUG_PRINT(UARTprintf("Reading\t%d\n", (int) CondReading);)
 
 											if(CondReading/OldReading > 2)
@@ -5727,7 +5730,7 @@ int main(void) {
 					uint8_t signal_doubled = 0;
 					uint8_t checkstep = 0;
 
-					float CondReading = ConductivityMovingAvg();
+					float CondReading = ConductivityMovingAvg(COND_FREQ);
 					float OldReading = CondReading;
 
 					DEBUG_PRINT(UARTprintf("Reading\t%d\n", (int) CondReading);)
@@ -5736,7 +5739,7 @@ int main(void) {
 						PumpVolume(FW, 2.75, Speed_ISE, 0);
 						checkstep++;
 
-						CondReading = ConductivityMovingAvg();
+						CondReading = ConductivityMovingAvg(COND_FREQ);
 						DEBUG_PRINT(UARTprintf("Reading\t%d\n", (int) CondReading);)
 
 						if(CondReading/OldReading > 2)
@@ -7070,10 +7073,12 @@ int main(void) {
 					g_state = STATE_IDLE;
 					g_next_state = STATE_IDLE;
 				}
+
+				SetLED(BLUE_BUTTON | BLUE_BUTTON_V, 0);
 #endif
 			}
 
-			SetLED(BLUE_BUTTON | BLUE_BUTTON_V, 0);
+
 
 			// Return to idle if abort command is received
 			if(g_state != STATE_MEASUREMENT)
@@ -10769,6 +10774,16 @@ int main(void) {
 #else
 							RunCVCleaningCycle(Ref_drift, 0, Test_Number);
 #endif
+
+							uint8_t App_Cal_Status = *MemoryRead(Cal_page, OFFSET_CALIBRATED_STATUS, 1);
+							if((gui32Error & CL_CLEANING_OUT_OF_RANGE) != 0)	// Cl Cleaning failed
+								App_Cal_Status &= ~0x80;	// Clear the Cl Cleaning flag
+							else
+								App_Cal_Status |= 0x80;		// Set the Cl Cleaning flag
+
+							MemoryWrite(Cal_page, OFFSET_CALIBRATED_STATUS, 1, &App_Cal_Status);	// Write the new Cl flag to memory
+
+							update_Test(Test_Number);
 						}
 
 						// Push air back into rinse port before moving to next solution
@@ -11146,6 +11161,14 @@ int main(void) {
 						PumpStepperRunStepSpeed_AbortReady(BW, Steps_tube_bubble, Speed_ISE);
 						userDelay(valve_delay, 1);
 #endif
+
+						uint8_t App_Cal_Status = *MemoryRead(Cal_page, OFFSET_CALIBRATED_STATUS, 1);
+						if((gui32Error & CL_CLEANING_OUT_OF_RANGE) != 0)	// Cl Cleaning failed
+							App_Cal_Status &= ~0x80;	// Clear the Cl Cleaning flag
+						else
+							App_Cal_Status |= 0x80;		// Set the Cl Cleaning flag
+
+						MemoryWrite(Cal_page, OFFSET_CALIBRATED_STATUS, 1, &App_Cal_Status);	// Write the new Cl flag to memory
 
 						update_Test(Test_Number);
 					}
@@ -12956,7 +12979,7 @@ int main(void) {
 					uint8_t signal_doubled = 0;
 					uint8_t checkstep = 0;
 
-					float CondReading = ConductivityMovingAvg();
+					float CondReading = ConductivityMovingAvg(COND_FREQ);
 					float OldReading = CondReading;
 
 					DEBUG_PRINT(UARTprintf("Reading\t%d\n", (int) CondReading);)
@@ -12976,7 +12999,7 @@ int main(void) {
 						PumpVolume(FW, 2.75, Speed_Fast, 0);
 						checkstep++;
 
-						CondReading = ConductivityMovingAvg();
+						CondReading = ConductivityMovingAvg(COND_FREQ);
 						DEBUG_PRINT(UARTprintf("Reading\t%d\n", (int) CondReading);)
 
 						if(CondReading/OldReading > 2)
@@ -13218,7 +13241,7 @@ int main(void) {
 						uint8_t signal_doubled = 0;
 						uint8_t checkstep = 0;
 
-						float CondReading = ConductivityMovingAvg();
+						float CondReading = ConductivityMovingAvg(COND_FREQ);
 						float OldReading = CondReading;
 
 						DEBUG_PRINT(UARTprintf("Reading\t%d\n", (int) CondReading);)
@@ -13238,7 +13261,7 @@ int main(void) {
 							PumpVolume(FW, 2.75, Speed_Fast, 0);
 							checkstep++;
 
-							CondReading = ConductivityMovingAvg();
+							CondReading = ConductivityMovingAvg(COND_FREQ);
 							DEBUG_PRINT(UARTprintf("Reading\t%d\n", (int) CondReading);)
 
 							if(CondReading/OldReading > 2)

@@ -2672,6 +2672,7 @@ void CleanAmperometricsSweep(int8_t Ref_drift)
 //	UARTprintf("Cleaning completed! \n");
 //}
 
+#ifdef CONST_COND_FREQ
 //**************************************************************************
 // Function to calculate moving average of conductivity ADC and return the
 // max or min, whichever has the greatest magnitude
@@ -2849,6 +2850,185 @@ float ConductivityMovingAvg(void)
 
 	return 0;
 }
+#else	// CONST_COND_FREQ
+//**************************************************************************
+// Function to calculate moving average of conductivity ADC and return the
+// max or min, whichever has the greatest magnitude
+// Takes a sample every ~11.5 us or ~87 kHz
+// Parameters:	ssMovingAvgBufferPtrInit; pointer to start of buffer; &array[0]
+//				usBufferSize, size of buffer being pointed at
+// Outputs:		Max - Min of signal in uV
+//				Used to do, but changed that Absolute value of Max or Min voltage in uV
+//				NOT Peak-to-peak voltage
+//**************************************************************************
+float ConductivityMovingAvg(uint16_t ui16freq)
+{
+	if((gui32Error & ABORT_ERRORS) == 0)
+	{
+		// Set SPI communication to capture on falling edge of clock (other ADCs capture on rising edge)
+		SSIDisable(SSI1_BASE);
+		SSIConfigSetExpClk(SSI1_BASE, SysCtlClockGet(), SSI_FRF_MOTO_MODE_1, SSI_MODE_MASTER, SPI_CLOCK, 8);
+		SSIEnable(SSI1_BASE);
+
+		uint16_t usBufferSize = 5;
+		int16_t ssMovingAvgBuffer[5] = {0, 0, 0, 0, 0}; // Array has to be same size as usBufferSize
+		int16_t* ssMovingAvgBufferPtr = &ssMovingAvgBuffer[0]; // Create and set a pointer to beginning of buffer
+
+		uint16_t usNoOfPeriods = ui16freq;
+		uint32_t usNoOfSamples = 87000 / ui16freq;
+//		uint16_t usNoOfPeriods = 250;
+//		uint16_t usNoOfSamples = 87; // sampling period is ~11us ~87 kHz		// Samples in ONE signal period!!! 270 for 100 Hz
+//		uint16_t usNoOfSamples = 174; // sampling period is ~11us ~87 kHz		// Samples in ONE signal period!!! 270 for 100 Hz
+//		uint16_t usNoOfSamples = 348; // sampling period is ~11us ~87 kHz		// Samples in ONE signal period!!! 270 for 100 Hz
+//		uint16_t usNoOfPeriods = 100;
+//		uint16_t usNoOfSamples = 870; // sampling period is ~11us ~87 kHz		// Samples in ONE signal period!!! 270 for 100 Hz
+		uint32_t ulDataRx[2];
+		uint32_t ulindex2;
+		uint32_t ulindex3;
+		int16_t ssData;
+		int32_t slDataFiltered;
+		int32_t slRunSum;
+		int32_t slMax;
+		int32_t slMin;
+
+		uint32_t delay;
+		if(gABoard >= AV6_1)
+			delay = (SysCtlClockGet()/3000 * .0013) - 2; // 1.3 us delay for CNV pin pulse
+		else
+			delay = (SysCtlClockGet()/3000 * .0032) - 2; // 3.2 us delay for CNV pin pulse
+
+		int32_t slSumMax = 0;
+		int32_t slSumMin = 0;
+
+//		int32_t abs_max = 0;
+//		int32_t abs_min = 0;
+
+		uint8_t attempts = 0;
+		while(slSumMax == 0 && slSumMin == 0 && attempts < 3)
+		{
+			slRunSum = 0;
+			attempts++;
+
+#ifdef MCU_ZXR
+			if(gABoard >= AV6_1)
+				GPIOPinWrite(IO_COND_ADC_CNV_BASE, IO_COND_ADC_CNV_PIN, ~IO_COND_ADC_CNV_PIN);				// CNV for ADC3 LOW (Turn low so it can be turned high)
+#else
+			if(gABoard >= AV6_1)
+				GPIOPinWrite(GPIO_PORTD_BASE, GPIO_PIN_2, ~GPIO_PIN_2);				// CNV for ADC3 LOW (Turn low so it can be turned high)
+#endif
+
+			while(SSIDataGetNonBlocking(SSI1_BASE, &ulDataRx[0]))  	{} // Clear FIFO
+
+			// Transmit request to restart conversion on channel 0.
+			for(ulindex3 = 0; ulindex3 < usNoOfPeriods; ulindex3++)
+			{
+				slMax = 0;
+				slMin = 0;
+
+				for(ulindex2 = 0; ulindex2 < usNoOfSamples; ulindex2++)
+				{
+#ifdef MCU_ZXR
+					GPIOPinWrite(IO_COND_ADC_CNV_BASE, IO_COND_ADC_CNV_PIN, IO_COND_ADC_CNV_PIN);				// CNV for ADC3 HIGH (start conversion)
+					SysCtlDelay(delay);	// t_conv is min .07us max 3.2us
+					GPIOPinWrite(IO_COND_ADC_CNV_BASE, IO_COND_ADC_CNV_PIN, ~IO_COND_ADC_CNV_PIN);				// CNV for ADC3 LOW (acquisition period)
+
+#else
+					GPIOPinWrite(GPIO_PORTD_BASE, GPIO_PIN_2, GPIO_PIN_2);				// CNV for ADC3 HIGH (start conversion)
+					SysCtlDelay(delay);	// t_conv is min .07us max 3.2us
+					GPIOPinWrite(GPIO_PORTD_BASE, GPIO_PIN_2, ~GPIO_PIN_2);				// CNV for ADC3 LOW (acquisition period)
+
+#endif
+
+					// Start clock to retrieve data (16 clock cycles)
+					SSIDataPut(SSI1_BASE, 0x00);
+					SSIDataPut(SSI1_BASE, 0x00);
+					//			while(SSIBusy(SSI1_BASE))   {}
+
+					SSIDataGet(SSI1_BASE, &ulDataRx[0]);
+					SSIDataGet(SSI1_BASE, &ulDataRx[1]);
+
+					// Compose data from received bytes
+					ssData = ((ulDataRx[0] << 8) | ulDataRx[1]) & 0xFFFF;
+
+//					if(ssData > abs_max)
+//						abs_max = ssData;
+//					if(ssData < abs_min)
+//						abs_min = ssData;
+
+					// Process data
+					slRunSum -= *ssMovingAvgBufferPtr - ssData; //slRunSum - *ssMovingAvgBufferPtr + ssData;
+					*ssMovingAvgBufferPtr = ssData;
+					ssMovingAvgBufferPtr++; // = ssMovingAvgBufferPtr + 1;
+					if (ssMovingAvgBufferPtr >= (&ssMovingAvgBuffer[0] + usBufferSize)) {
+						ssMovingAvgBufferPtr = &ssMovingAvgBuffer[0];
+					}
+
+					slDataFiltered = slRunSum / usBufferSize;
+
+					if (slDataFiltered > slMax)
+						slMax = slDataFiltered;
+					if (slDataFiltered < slMin)
+						slMin = slDataFiltered;
+
+				}//For loop - NoOfSamples
+				if (ulindex3 > 1) {						// skip the first period to avoid error coming from pre-loading buffer with invalid numbers
+					slSumMax = slSumMax + slMax;
+					slSumMin = slSumMin - abs(slMin);
+				}
+			}//For loop - NoOfPeriods
+
+			if(slSumMax == 0 && slSumMin == 0)
+			{
+//				gui32Error |= ADC3_FAIL;
+//				update_Error();
+				DEBUG_PRINT(
+				UARTprintf("Conductivity ADC read back all 0's!\n");
+				UARTprintf("Resetting Analog Board!\n");
+				)
+
+				AnalogOff();
+
+				SysCtlDelay(SysCtlClockGet()/3);	// Wait to give analog board time to power-down before turning back on
+
+				InitAnalog();
+			}
+		}
+
+		if(slSumMax == 0 && slSumMin == 0)
+		{
+			gui32Error |= ADC3_FAIL;
+			update_Error();
+			DEBUG_PRINT(UARTprintf("Conductivity ADC always read 0's, updating error!\n");)
+		}
+
+		float Avg_Max = (float)slSumMax / (usNoOfPeriods - 1); // subtract 1 because we don't sum the first period
+		float Avg_Min = (float)slSumMin / (usNoOfPeriods - 1); // subtract 1 because we don't sum the first period
+
+		float Voltage = (Avg_Max - Avg_Min) * 3000000 / 32768;
+
+		// JC: 6/30/2020: Previously we returned either min or max, whichever was bigger, but there is a small offset 0-2mV which makes it not even, switch to returning the full signal, max - min
+//		if(Avg_Max > abs_val(Avg_Min))
+//			Voltage = Avg_Max * 3000000 / 32768; // uV
+//		else
+//			Voltage = abs_val(Avg_Min) * 3000000 / 32768; // uV
+//
+//		UARTprintf("Max voltage read: %d\n", (int) ((float) Avg_Max * 3000000 / 32768));
+//		UARTprintf("Min voltage read: %d\n", (int) ((float) Avg_Min * 3000000 / 32768));
+
+#ifdef MCU_ZXR
+		if(gABoard >= AV6_1)
+			GPIOPinWrite(IO_COND_ADC_CNV_BASE, IO_COND_ADC_CNV_PIN, IO_COND_ADC_CNV_PIN);				// CNV for ADC3 HIGH (Leave this pin high when not collecting data)
+#else
+		if(gABoard >= AV6_1)
+			GPIOPinWrite(GPIO_PORTD_BASE, GPIO_PIN_2, GPIO_PIN_2);				// CNV for ADC3 HIGH (Leave this pin high when not collecting data)
+#endif
+
+		return Voltage;
+	}
+
+	return 0;
+}
+#endif// CONST_COND_FREQ
 
 #ifndef COND_SOLUTION_STRUCT
 //********************************************************************************
@@ -3156,6 +3336,56 @@ float MeasureConductivity(struct SolutionVals* Sols, uint8_t Test_Number)
 
 		ConnectMemory(0);
 
+#ifndef CONST_COND_FREQ
+		// Because 5kHz can't read DI, take a point at 1kHz first to check for DI
+		if(gABoard >= ARV1_0B)
+		{
+			float I_Low_Alt;
+
+			// Read the currents off the memory, these should be saved during the QC process
+			EEPROMRead((uint32_t *) &I_Low_Alt, OFFSET_COND_ALT_I_LOW, 4);
+
+			if(I_Low_Alt != I_Low_Alt)
+				I_Low_Alt = I_Low * 1.22;	// Average from circuits before ARV1_0B
+
+			InitWaveGen(0, 1000);	// Change frequency to 1kHz
+
+			// Set low current range
+			// 10.7 uApp R = 309k + 499k = 808k
+			IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 0);
+			IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 0);
+
+			uint8_t Check = 0, attempt = 0;
+
+			while(Check != 1)
+			{
+				WaveGenSet(1);
+
+				Check = CheckCond(1000);
+				if(attempt == 5)
+				{
+					gui32Error |= WAVE_GEN_FAIL;
+					break;
+				}
+
+				if(Check != 1)
+				{
+					InitWaveGen(1, 1000);
+					attempt++;
+				}
+			}
+
+			ConductivityReading = ConductivityMovingAvg(1000);		// uV
+			Conductivity = (I_Low / ConductivityReading - CalConductivityKLow) * 1000000 / CalConductivitySlopeLow;
+
+			if(Conductivity < 50)
+				ConductivityMeasurementGood = 1;
+
+			InitWaveGen(0, 5000);	// Change frequency back to 5kHz
+		}
+#endif
+
+
 		uint8_t i = 0;
 		while(ConductivityMeasurementGood == 0 && i < 5)
 		{
@@ -3205,6 +3435,8 @@ float MeasureConductivity(struct SolutionVals* Sols, uint8_t Test_Number)
 //			}
 
 			uint8_t Check = 0, attempt = 0;
+
+#ifdef CONST_COND_FREQ
 			while(Check != 1)
 			{
 				WaveGenSet(1);
@@ -3227,6 +3459,27 @@ float MeasureConductivity(struct SolutionVals* Sols, uint8_t Test_Number)
 //			UARTprintf("Cond Raw: %d\n", (int) (ConductivityReading * 1000));
 				//				ConductivityReadingInv = 1000000000 / ConductivityReading;
 //					}
+#else
+			while(Check != 1)
+			{
+				WaveGenSet(1);
+
+				Check = CheckCond(COND_FREQ);
+				if(attempt == 5)
+				{
+					gui32Error |= WAVE_GEN_FAIL;
+					break;
+				}
+
+				if(Check != 1)
+				{
+					InitWaveGen(1, COND_FREQ);
+					attempt++;
+				}
+			}
+
+			ConductivityReading = ConductivityMovingAvg(COND_FREQ);		// uV
+#endif
 
 			if(CalConductivitySlopeLow < 1)
 			{
@@ -4496,49 +4749,49 @@ float ReadRefGuard(float fSec)
 	return nanf("");
 }
 
-//**************************************************************************
-// Attempting to clean the conductivity pads by holding them at 0 and
-// driving the CE, leaving the Ref unconnected for the first attempt
-// Created: 12/7/2023
-// Parameters:	NONE
-// Returns:		NONE
-//**************************************************************************
-void CleanCond(void)
-{
-	// Measure conductivity
-	// Set RE and CE floating and close RE/CE loop for conductivity
-	IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWA, 1);
-	IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWB, 0);
-
-	ConnectMemory(0);
-
-	IO_Ext_Set(IO_EXT2_ADDR, 3, COND_SHORT_SW, 1);		// Reconnect feedback switch over conductivity op-amp
-	SysCtlDelay(SysCtlClockGet()/3000 * 1000);
-	IO_Ext_Set(IO_EXT1_ADDR, 3, COND_SW, 1);	// Input for switch connecting circuit
-
-	DACVoltageSet(6, 2500, true);	// Set the DAC COUNTER_V_DRIVE channel
-	IO_Ext_Set(IO_EXT2_ADDR, 3, COUNTER_EL_DRIVE, 1);
-
-	DEBUG_PRINT(UARTprintf("Cleaning Conductivity:\n");)
-	uint8_t attempt = 0;
-	uint8_t stable = 0;
-	float Prev_Diff = ConductivityMovingAvg();
-	DEBUG_PRINT(UARTprintf("%d\n", (int) (Prev_Diff));)
-	while(GPIOPinRead(IO_BUTTON_BASE, IO_BUTTON_PIN) == IO_BUTTON_PIN && attempt < 15 && stable < 5)
-	{
-		float Diff = ConductivityMovingAvg();
-		if(abs_val(Diff - Prev_Diff) < 5)
-		{
-			stable++;
-		}
-		Prev_Diff = Diff;
-
-		DEBUG_PRINT(UARTprintf("%d\n", (int) (Diff));)
-	}
-
-	IO_Ext_Set(IO_EXT2_ADDR, 3, COUNTER_EL_DRIVE, 0);	// Let go of Counter electrode
-	DACVoltageSet(6, 0, true);	// Set the DAC COUNTER_V_DRIVE channel
-
-	IO_Ext_Set(IO_EXT1_ADDR, 3, COND_SW, 0);	// Disconnect switch connecting circuit
-}
+////**************************************************************************
+//// Attempting to clean the conductivity pads by holding them at 0 and
+//// driving the CE, leaving the Ref unconnected for the first attempt
+//// Created: 12/7/2023
+//// Parameters:	NONE
+//// Returns:		NONE
+////**************************************************************************
+//void CleanCond(void)
+//{
+//	// Measure conductivity
+//	// Set RE and CE floating and close RE/CE loop for conductivity
+//	IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWA, 1);
+//	IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWB, 0);
+//
+//	ConnectMemory(0);
+//
+//	IO_Ext_Set(IO_EXT2_ADDR, 3, COND_SHORT_SW, 1);		// Reconnect feedback switch over conductivity op-amp
+//	SysCtlDelay(SysCtlClockGet()/3000 * 1000);
+//	IO_Ext_Set(IO_EXT1_ADDR, 3, COND_SW, 1);	// Input for switch connecting circuit
+//
+//	DACVoltageSet(6, 2500, true);	// Set the DAC COUNTER_V_DRIVE channel
+//	IO_Ext_Set(IO_EXT2_ADDR, 3, COUNTER_EL_DRIVE, 1);
+//
+//	DEBUG_PRINT(UARTprintf("Cleaning Conductivity:\n");)
+//	uint8_t attempt = 0;
+//	uint8_t stable = 0;
+//	float Prev_Diff = ConductivityMovingAvg();
+//	DEBUG_PRINT(UARTprintf("%d\n", (int) (Prev_Diff));)
+//	while(GPIOPinRead(IO_BUTTON_BASE, IO_BUTTON_PIN) == IO_BUTTON_PIN && attempt < 15 && stable < 5)
+//	{
+//		float Diff = ConductivityMovingAvg();
+//		if(abs_val(Diff - Prev_Diff) < 5)
+//		{
+//			stable++;
+//		}
+//		Prev_Diff = Diff;
+//
+//		DEBUG_PRINT(UARTprintf("%d\n", (int) (Diff));)
+//	}
+//
+//	IO_Ext_Set(IO_EXT2_ADDR, 3, COUNTER_EL_DRIVE, 0);	// Let go of Counter electrode
+//	DACVoltageSet(6, 0, true);	// Set the DAC COUNTER_V_DRIVE channel
+//
+//	IO_Ext_Set(IO_EXT1_ADDR, 3, COND_SW, 0);	// Disconnect switch connecting circuit
+//}
 #endif
