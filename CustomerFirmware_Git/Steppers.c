@@ -2461,11 +2461,7 @@ void RunValveToPossition_Bidirectional(int Possition, int valve_steps_per_possit
 			if(g_CurrentValvePossition == 0)	// Assume we are at the air port (we are) but set a flag to clean up the extra slop
 			{
 				StoreFlag = 1;
-#ifdef STORE_ON_SAMP
-				g_CurrentValvePossition = V_SAMP;
-#else
-				g_CurrentValvePossition = V_AIR;
-#endif
+				g_CurrentValvePossition = V_STORE;
 			}
 #endif
 
@@ -3014,14 +3010,12 @@ int16_t TestValveDrift(void)
 //
 // Created: 10/25/2021
 //**************************************************************************
-void TurnValveToStore(void)
+void TurnValveToStore(uint8_t Valve_Position)
 {
-#ifdef STORE_ON_SAMP
-	DEBUG_PRINT(UARTprintf("Storing aligned with sample port!\n");)
-	RunValveToPossition_Bidirectional(V_SAMP, VALVE_STEPS_PER_POSITION);
-#else
-	RunValveToPossition_Bidirectional(V_AIR, VALVE_STEPS_PER_POSITION);
-#endif
+	if(Valve_Position < 1 || Valve_Position > 10)
+		Valve_Position = V_STORE;
+
+	RunValveToPossition_Bidirectional(Valve_Position, VALVE_STEPS_PER_POSITION);
 
 	int StepsInBetween = 60;
 
@@ -3048,7 +3042,10 @@ void TurnValveToStore(void)
 	// Always want it to think the last direction was BW
 	g_ValveDirection = BW;
 
-	g_CurrentValvePossition = 0; // Set global variable to track position, 0 will indicate between 1 and 10
+	if(Valve_Position == V_STORE)
+		g_CurrentValvePossition = 0; // Set global variable to track position, 0 will indicate between 1 and 10
+	else
+		g_CurrentValvePossition = NO_OF_VALVE_PORTS + 1; // Set invalid location so the next time the valve is turned it finds the home position
 }
 
 ////**************************************************************************

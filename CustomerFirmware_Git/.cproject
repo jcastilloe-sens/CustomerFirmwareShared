@@ -50,7 +50,6 @@
 									<listOptionValue builtIn="false" value="NH4_PH_CORR"/>
 									<listOptionValue builtIn="false" value="xCV_MEASUREMENT"/>
 									<listOptionValue builtIn="false" value="xREAD_REF_GUARD"/>
-									<listOptionValue builtIn="false" value="xSTORE_ON_SAMP"/>
 									<listOptionValue builtIn="false" value="xSTRAIGHT_TO_CL"/>
 									<listOptionValue builtIn="false" value="xCL_FILL_WITH_CLEAN"/>
 									<listOptionValue builtIn="false" value="xCV_CLEANING"/>

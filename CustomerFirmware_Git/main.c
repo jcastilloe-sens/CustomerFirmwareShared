@@ -339,6 +339,7 @@
 //			2/1/2024: Send commands to BT to update Test and Cal data as it progresses
 //			2/7/2024: Changing low range conductivity intercpet to pass through 0, and RAV1 boards to run 1kHz first in the low range to check for DI
 //			2/12/2024: Rewrite previous calibrated status after running Cl cleaning during test to update flag directly in calibrations memory
+//		V01.03.19:	2/13/2024: Added UART commands to rewrite thermistor correction and Turn valve to air or sample
 //*****************************************************************************
 #include <stdio.h>
 #include <stdint.h>
@@ -1037,6 +1038,7 @@ int main(void) {
 //			DEBUG_PRINT(UARTprintf("To turn on/off FCl, TCl, or Alk type F, T, or A\n");)
 
 			DEBUG_PRINT(UARTprintf("UART Commands:\nA: Alkalinity\nF: Free Chlorine\nT: Total Chlorine\nP: Pump sample vial\nC: Auto Calibration\nR: Rerun Cal\nB: Prime bubbles out of pouch tubes\n");)
+			DEBUG_PRINT(UARTprintf("V: Turn and store valve\nM: Write to memory\n");)
 #endif
 
 			while(g_state == STATE_IDLE)
@@ -1421,6 +1423,134 @@ int main(void) {
 						{
 							DEBUG_PRINT(UARTprintf("Cancelling!\n");)
 						}
+					}
+
+					if(Command == 'V')
+					{
+						if(gCartridge == 1)
+						{
+							uint8_t check = 1;
+							DEBUG_PRINT(UARTprintf("\n");)
+							DEBUG_PRINT(UARTprintf("Type A for air, type S for sample\n");)
+
+							uint8_t Store_Position = 0;
+
+							while(check == 1)
+							{
+								if(UARTCharsAvail(UART0_BASE))
+								{
+									int32_t UART_Rx = UARTCharGet(UART0_BASE);
+									UARTCharPutNonBlocking(UART0_BASE, UART_Rx); //echo character
+									DEBUG_PRINT(UARTprintf("\n");)
+
+									if(UART_Rx == 'A')	// 0x0D = enter; use hex because UART_Rx is defined as int32_t because thats what UARTCharGet returns
+									{
+										check = 2;
+										DEBUG_PRINT(UARTprintf("Turning to air\n");)
+										Store_Position = V_AIR;
+									}
+									else if(UART_Rx == 'S')
+									{
+										check = 2;
+										DEBUG_PRINT(UARTprintf("Turning to sample\n");)
+										Store_Position = V_SAMP;
+									}
+									else
+										check = 0;
+
+								}
+							}
+
+							if(check == 0)
+							{
+								DEBUG_PRINT(UARTprintf("Cancelling!\n");)
+							}
+							else
+							{
+								InitAnalog();
+								SetLED(BLUE_BUTTON_BLINK, 1);
+
+
+								TurnValveToStore(Store_Position);
+								SetLED(BLUE_BUTTON_BLINK, 0);
+
+								if(POWER_ANALOG_OFF && gBoard >= V6_4)
+								{
+									AnalogOff();
+								}
+							}
+						}
+						else
+							DEBUG_PRINT(UARTprintf("Plug in sensor and try again\n");)
+					}
+
+					if(Command == 'M')
+					{
+						if(gCartridge == 1)
+						{
+							uint8_t check = 1;
+							DEBUG_PRINT(UARTprintf("\n");)
+							DEBUG_PRINT(UARTprintf("Type T to write thermistor slope\n");)
+
+							while(check == 1)
+							{
+								if(UARTCharsAvail(UART0_BASE))
+								{
+									int32_t UART_Rx = UARTCharGet(UART0_BASE);
+									UARTCharPutNonBlocking(UART0_BASE, UART_Rx); //echo character
+									DEBUG_PRINT(UARTprintf("\n");)
+
+									if(UART_Rx == 'T')	// 0x0D = enter; use hex because UART_Rx is defined as int32_t because thats what UARTCharGet returns
+									{
+										float Therm_corr = Build_float(MemoryRead(PAGE_FACTORY_CAL, OFFSET_THERM_CORRECTION, 4));
+										DEBUG_PRINT(UARTprintf("Current Therm slope = %d / 1000\n", (int) (Therm_corr * 1000));)
+
+										DEBUG_PRINT(UARTprintf("Type in new slope in the format: '-0.###'\n");)
+										int32_t Therm_Rx[6];
+										while(check == 1)
+										{
+											// Clear UART FIFO
+											while(UARTCharsAvail(UART0_BASE))
+												UARTCharGetNonBlocking(UART0_BASE);
+
+											uint8_t count = 0;
+											for(count = 0; count < 6; count++)
+											{
+												Therm_Rx[count] = UARTCharGet(UART0_BASE);
+												UARTCharPutNonBlocking(UART0_BASE, Therm_Rx[count]); //echo character
+
+												if(Therm_Rx[count] == 0x0D)	// If the user pressed enter
+												{
+													UARTprintf("\nReceived enter, breaking for loop\n"); // Set this up so the user can press enter to restart typing the number
+													break;
+												}
+											}
+											UARTprintf("\n");
+
+											// Check that the 4 characters are a number, followed by decimal, followed by two numbers, also check all 4 characters were recevied
+											if(Therm_Rx[0] == '-' && Therm_Rx[1] == '0' && Therm_Rx[2] == '.' && (Therm_Rx[3] >= '0' && Therm_Rx[3] <= '9') && (Therm_Rx[4] >= '0' && Therm_Rx[4] <= '9') && (Therm_Rx[5] >= '0' && Therm_Rx[5] <= '9') && count == 6)
+											{
+												check = 2;
+												Therm_corr = -(((float) (Therm_Rx[3] - '0')) / 10 + ((float) (Therm_Rx[4] - '0')) / 100 + (((float) Therm_Rx[5] - '0')) / 1000);
+												DEBUG_PRINT(UARTprintf("Saving %d / 1000\n", (int) (Therm_corr * 1000));)
+												MemoryWrite(PAGE_FACTORY_CAL, OFFSET_THERM_CORRECTION, 4, (uint8_t *) &Therm_corr);
+											}
+											else
+												UARTprintf("Entered data not in required format, needs to be -0.###! Try again!\n");
+										}
+									}
+									else
+										check = 0;
+								}
+							}
+
+							if(check == 0)
+							{
+								DEBUG_PRINT(UARTprintf("Cancelling!\n");)
+							}
+						}
+						else
+							DEBUG_PRINT(UARTprintf("Plug in sensor and try again\n");)
 					}
 				}
 #endif
@@ -6861,7 +6991,7 @@ int main(void) {
 
 			TestValveDrift();
 #ifdef LOOSE_VALVE
-			TurnValveToStore();
+			TurnValveToStore(V_STORE);
 #endif
 
 			if((gui32Error & ABORT_ERRORS) == 0)
@@ -13554,7 +13684,7 @@ int main(void) {
 
 			TestValveDrift();
 #ifdef LOOSE_VALVE
-			TurnValveToStore();
+			TurnValveToStore(V_STORE);
 #endif
 
 			// Save error data after all other data has been written to memory

@@ -47,6 +47,8 @@ extern struct ValvePort ValveSetup;
 #define V_T1		ValveSetup.T1
 #define V_RINSE		ValveSetup.Rinse
 
+#define V_STORE		V_AIR	// Define the position to store the valve between uses
+
 #else
 //extern float gPump_Ratio;
 
@@ -180,7 +182,7 @@ extern void RunValveToPossition_Bidirectional_AbortReady(int Possition, int valv
 
 extern int16_t TestValveDrift(void);
 
-extern void TurnValveToStore(void);
+extern void TurnValveToStore(uint8_t Valve_Position);
 
 extern void PumpVolume(uint8_t Direction, float Volume, uint32_t EndDelay, uint8_t AbortReady);
 
