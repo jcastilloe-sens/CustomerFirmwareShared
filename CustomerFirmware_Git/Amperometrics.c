@@ -3376,7 +3376,13 @@ float MeasureConductivity(struct SolutionVals* Sols, uint8_t Test_Number)
 			}
 
 			ConductivityReading = ConductivityMovingAvg(1000);		// uV
-			Conductivity = (I_Low / ConductivityReading - CalConductivityKLow) * 1000000 / CalConductivitySlopeLow;
+
+			float CalConductivitySlopeLow_1k = Build_float(MemoryRead(PAGE_CAL, OFFSET_CAL_COND_LOW_ALT_SLOPE, 4));
+
+			if(CalConductivitySlopeLow_1k == CalConductivitySlopeLow_1k)
+				Conductivity = (I_Low_Alt / ConductivityReading - CalConductivityKLow) * 1000000 / CalConductivitySlopeLow_1k;
+			else
+				Conductivity = (I_Low_Alt / ConductivityReading - CalConductivityKLow) * 1000000 / CalConductivitySlopeLow;
 
 			if(Conductivity < 50)
 				ConductivityMeasurementGood = 1;

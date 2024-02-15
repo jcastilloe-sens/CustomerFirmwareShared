@@ -340,6 +340,7 @@
 //			2/7/2024: Changing low range conductivity intercpet to pass through 0, and RAV1 boards to run 1kHz first in the low range to check for DI
 //			2/12/2024: Rewrite previous calibrated status after running Cl cleaning during test to update flag directly in calibrations memory
 //		V01.03.19:	2/13/2024: Added UART commands to rewrite thermistor correction and Turn valve to air or sample
+//		V01.03.20:	2/15/2024: Create an alternate conductivity slope for 5kHz boards to use for the 1kHz signals
 //*****************************************************************************
 #include <stdio.h>
 #include <stdint.h>
@@ -2369,6 +2370,7 @@ int main(void) {
 			float *Ca_mV_Cal_1 = &ISE_mV_Cal_1[ISEs.Ca.index];
 
 			float T_Rinse, T_Clean, T_Cal_2, T_Cal_1;
+			float CalConductivityV2Low_1k = 0;
 			float CalConductivityV2Low = 0, CalConductivityV1Mid = 0;
 			float CalConductivityV3High = 0;
 			float CalConductivityV2Mid = 0, CalConductivityV2High = 0;
@@ -2654,6 +2656,41 @@ int main(void) {
 						else
 						{
 							ConnectMemory(0);
+
+							if(gABoard >= ARV1_0B)
+							{
+								InitWaveGen(0, 1000);	// Change frequency to 1kHz
+
+								// Set low current range
+								// 10.7 uApp R = 309k + 499k = 808k
+								IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 0);
+								IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 0);
+
+								uint8_t Check = 0, attempt = 0;
+								while(Check != 1)
+								{
+									WaveGenSet(1);
+
+									Check = CheckCond(1000);
+									if(attempt == 5)
+									{
+										gui32Error |= WAVE_GEN_FAIL;
+										break;
+									}
+
+									if(Check != 1)
+									{
+										InitWaveGen(1, 1000);
+										attempt++;
+									}
+								}
+
+								CalConductivityV2Low_1k = ConductivityMovingAvg(1000);
+
+								WaveGenSet(0);	// Turn off waveform generator when switching ranges
+
+								InitWaveGen(0, 5000);	// Change frequency back to 5kHz
+							}
 
 							// Set low current range
 							// 10.7 uApp R = 309k + 499k = 808k
@@ -3516,24 +3553,46 @@ int main(void) {
 						{
 							ConnectMemory(0);
 
+							if(gABoard >= ARV1_0B)
+							{
+								InitWaveGen(0, 1000);	// Change frequency to 1kHz
+
+								// Set low current range
+								// 10.7 uApp R = 309k + 499k = 808k
+								IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 0);
+								IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 0);
+
+								uint8_t Check = 0, attempt = 0;
+								while(Check != 1)
+								{
+									WaveGenSet(1);
+
+									Check = CheckCond(1000);
+									if(attempt == 5)
+									{
+										gui32Error |= WAVE_GEN_FAIL;
+										break;
+									}
+
+									if(Check != 1)
+									{
+										InitWaveGen(1, 1000);
+										attempt++;
+									}
+								}
+
+								CalConductivityV2Low_1k = ConductivityMovingAvg(1000);
+
+								WaveGenSet(0);	// Turn off waveform generator when switching ranges
+
+								InitWaveGen(0, 5000);	// Change frequency back to 5kHz
+							}
+
+
 							// Set low current range
 							// 10.7 uApp R = 309k + 499k = 808k
 							IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 0);
 							IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 0);
-
-							//					userDelay(Cond_delay, 1);
-//							uint8_t Check = 0;
-//							while(Check != 1)
-//							{
-//								WaveGenSet(1);
-//
-//								Check = CheckCond();
-//								if(Check != 1)
-//								{
-//									InitWaveGen(1);
-////									break;
-//								}
-//							}
 
 							uint8_t Check = 0, attempt = 0;
 							while(Check != 1)
@@ -4075,6 +4134,7 @@ int main(void) {
 #endif
 
 						float CalConductivitySlopeLow, CalConductivitySlopeMid, CalConductivitySlopeHigh, CalConductivityKLow, CalConductivityKMid, CalConductivityKHigh;
+						float CalConductivitySlopeLow_1k;
 						if(1)	// This is Cal 3, Cal 3 is highest conductivity, Cal 1 is lowest conductivity
 						{
 							// Put the 3 calibrants used in the array twice each, order doesn't matter here because the array will be sorted from smallest to largest
@@ -4090,7 +4150,30 @@ int main(void) {
 							CalConductivityKLow = 0; //I_Low / CalConductivityV2Low - CalConductivitySlopeLow * CalConds[0]/1000000;
 							CalConductivityKMid = I_Mid / CalConductivityV2Mid - CalConductivitySlopeMid * CalConds[1]/1000000;
 							CalConductivityKHigh = I_High / CalConductivityV3High - CalConductivitySlopeHigh * CalConds[2]/1000000;
+
+							if(gABoard >= ARV1_0B)
+							{
+								float I_Low_Alt;
+
+								// Read the currents off the memory, these should be saved during the QC process
+								EEPROMRead((uint32_t *) &I_Low_Alt, OFFSET_COND_ALT_I_LOW, 4);
+
+								if(I_Low_Alt != I_Low_Alt)
+								{
+									float I_Low;
+									EEPROMRead((uint32_t *) &I_Low, OFFSET_COND_I_LOW, 4);
+
+									I_Low_Alt = I_Low * 1.22;	// Average from circuits before ARV1_0B
+								}
+
+								CalConductivityV2Low_1k = (1000000 * I_Low_Alt) / CalConductivityV2Low_1k;
+								CalConductivitySlopeLow_1k = (CalConductivityV2Low_1k) / (CalConds[0]);
+								DEBUG_PRINT(UARTprintf("1k Low Slope:\t%d/1000\n", (int) (CalConductivitySlopeLow_1k * 1000));)
+								MemoryWrite(PAGE_CAL, OFFSET_CAL_COND_LOW_ALT_SLOPE, 4, (uint8_t *) &CalConductivitySlopeLow_1k);
+							}
 						}
+
+
 
 						if(CalConductivitySlopeLow >= COND_SLOPE_1_LOW && CalConductivitySlopeLow <= COND_SLOPE_1_HIGH
 								&& CalConductivitySlopeMid >= COND_SLOPE_2_LOW && CalConductivitySlopeMid <= COND_SLOPE_2_HIGH
@@ -4532,12 +4615,16 @@ int main(void) {
 							{DEBUG_PRINT(UARTprintf("Ca %d\t%d\t%d\t%d\t%d\n", i + 1, (int) (Ca_mV_Rinse[i] * 1000), (int) (Ca_mV_Cal_1[i] * 1000), (int) (Ca_mV_Cal_2[i] * 1000), (int) (ISE_mV_Clean[i + ISEs.Ca.index] * 1000));)}
 							DEBUG_PRINT(UARTprintf("\n");)
 
-							DEBUG_PRINT(UARTprintf("Raw Conductivity Data: \n");)
+							DEBUG_PRINT(UARTprintf("Raw Conductivity Data:\n");)
 							DEBUG_PRINT(UARTprintf("Cond Low\t%d\n", (int) (CalConductivityV2Low * 1000));)
 							DEBUG_PRINT(UARTprintf("Cond Mid\t%d\t%d\n", (int) (CalConductivityV1Mid * 1000), (int) (CalConductivityV2Mid * 1000));)
 							DEBUG_PRINT(UARTprintf("Cond High\t%d\t%d\n\n", (int) (CalConductivityV2High * 1000), (int) (CalConductivityV3High * 1000));)
 
-							DEBUG_PRINT(UARTprintf("Raw Conductivity Data: \n");)
+							DEBUG_PRINT(UARTprintf("Raw Conductivity Data:\n");)
+							if(gABoard >= ARV1_0B)
+							{
+								DEBUG_PRINT(UARTprintf("Cond Low 1k\t0\t%d\n", (int) (CalConductivityV2Low_1k * 1000));)
+							}
 							DEBUG_PRINT(UARTprintf("Cond Low\t0\t%d\n", (int) (CalConductivityV2LowInv * 1000));)
 							DEBUG_PRINT(UARTprintf("Cond Mid\t%d\t%d\n", (int) (CalConductivityV1MidInv * 1000), (int) (CalConductivityV2MidInv * 1000));)
 							DEBUG_PRINT(UARTprintf("Cond High\t%d\t%d\n\n", (int) (CalConductivityV2HighInv * 1000), (int) (CalConductivityV3HighInv * 1000));)
@@ -4657,6 +4744,10 @@ int main(void) {
 #endif	// TH_ITERATED_MATH
 #endif	// PH_LOG_K
 
+						if(gABoard >= ARV1_0B)
+						{
+							DEBUG_PRINT(UARTprintf("Cond Low 1kHz\t%d\n", (int) (CalConductivitySlopeLow_1k * 1000));)
+						}
 						DEBUG_PRINT(UARTprintf("Cond Low\t%d\t%d\n", (int) (CalConductivitySlopeLow * 1000), (int) (CalConductivityKLow * 1000));)
 						DEBUG_PRINT(UARTprintf("Cond Mid\t%d\t%d\n", (int) (CalConductivitySlopeMid * 1000), (int) (CalConductivityKMid * 1000));)
 						DEBUG_PRINT(UARTprintf("Cond High\t%d\t%d\n", (int) (CalConductivitySlopeHigh * 1000), (int) (CalConductivityKHigh * 1000));)
