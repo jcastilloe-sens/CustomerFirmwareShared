@@ -3482,6 +3482,7 @@ int main(void) {
 						else
 							DEBUG_PRINT(UARTprintf("Pumping Cal 1...\n");)
 #endif
+
 						if(PRIME_POUCH_TUBES && (Cal_Number == 1 || PrimePouchTubes == 1))
 						{
 							DEBUG_PRINT(UARTprintf("Big Prime... \n");)
@@ -3721,6 +3722,126 @@ int main(void) {
 //						PumpVolume(FW, 13.77, Speed_Slow, 1);
 						userDelay(valve_delay, 1);
 					}
+
+#ifdef H2_CALIBRATE_CAL6_B2_MIX	// TODO: Cal 6 + B2 mixing
+					if(1)
+					{
+						// Prime B2
+						DEBUG_PRINT(UARTprintf("Priming B2... \n");)
+						RunValveToPossition_Bidirectional_AbortReady(V_B2, VALVE_STEPS_PER_POSITION);
+						PumpVolume(FW, PumpVol_tube_prime_buffers, Speed_Slow, 1);
+						userDelay(valve_delay, 1);
+
+						// 1/12/2022: Found our Alkalinity is consistently about 20 ppm high, believe this is caused by first 30 steps of acid pumping
+						//	not moving solution but building pressure to move solution, subtracting this amount from calculations to get alkalinity
+						float PumpVol_Buffer = (PumpVol_Solution + PumpVol_Solution_plug)/10 + (16.8 * 30.0/610.0);	// Calculate 1/10 the volume of the cal plug add on the dead volume pumping found during T1 mixing
+						// Pump Cal 6 plug backwards
+						// Pump mixed conditioner/solution back and mix with buffer
+						DEBUG_PRINT(UARTprintf("Mixing %d uL of B2... \n", (int) PumpVol_Buffer);)
+
+						float PumpVol_back = PumpVol_tube_prime_buffers + (PumpVol_air_plug - PumpVol_tube_bubble) + PumpVol_Solution + PumpVol_Solution_plug;
+
+						RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);		// Move valve to sample
+						PumpVolume(BW, PumpVol_back, Speed_Slow, 1);
+						userDelay(valve_delay, 1);
+						int32_t Steps_to_align_pump = 1000 - (g_PumpStepsTravelled % 1000);
+						if(Steps_to_align_pump == 1000)
+							Steps_to_align_pump = 0;
+
+						// Initialize floats to hold pump variables
+						float PumpVolRev, Pump_Ratio;
+
+						// Read from Tiva EEPROM the pump specs
+						EEPROMRead((uint32_t *) &PumpVolRev, OFFSET_PUMP_VOL_PER_REV, 4);
+						EEPROMRead((uint32_t *) &Pump_Ratio, OFFSET_PUMP_DEAD_SPOT, 4);
+
+						if(PumpVolRev != PumpVolRev)
+							PumpVolRev = 16.8;
+						if(Pump_Ratio != Pump_Ratio)
+							Pump_Ratio = 0.61;
+
+						float Volume_to_align_pump = Steps_to_align_pump * PumpVolRev / Pump_Ratio / 1000;
+
+						// Need to remove the dead spot volume, luckily with the PumpVolume code we will never stop the pump in the dead spot so it'll be an all or nothing calculation
+						if(Steps_to_align_pump > 250)	// Check if we will be passing through dead spot, since we can't be inside the dead spot can merely check against center of dead spot
+							Volume_to_align_pump -= (1 - Pump_Ratio) * PumpVolRev / Pump_Ratio;	// Remove the volume of the dead spot
+						PumpStepperRunStepSpeed_AbortReady(FW, 1000 + Steps_to_align_pump, Speed_Slow);	// Buffer seemed to meter better if the pump was last pumping forward
+						userDelay(500, 1);
+
+						RunValveToPossition_Bidirectional_AbortReady(V_B2, VALVE_STEPS_PER_POSITION);		// Move valve to buffer 1
+						PumpVolume(FW, PumpVol_Buffer, Speed_Slow, 1);
+						userDelay(500, 1);
+
+						float PumpVol_forward = PumpVol_Solution + PumpVol_Solution_plug - PumpVolRev + PumpVol_air_bubble;		// Change this number to change where in mixing chamber the sample and buffer are mixed, pump forward the backward amount less a pump revolution and B2 volume
+
+						RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);		// Move valve to sample
+						PumpVolume(FW, PumpVol_forward - Volume_to_align_pump, Speed_Slow, 1);
+						userDelay(500, 1);
+
+						PumpStepperMix(BW, 1500, Speed_ISE, 10);
+
+						userDelay(5000, 1);	// Delay to let diffusion happen
+
+						PumpVolume(FW, PumpVol_air_plug - PumpVol_air_bubble, Speed_ISE, 1);
+
+						SleepValve();
+
+						// Read ISEs
+						float ISE_mV_Cal_1_B2[10];
+						CollectISEmV(ISE_mV_Cal_1_B2, 0xFFFF, ISE_WAIT, PRINT_ISE_TIME_DATA, &ISEs);
+
+						// Measure temperature for 3 seconds
+						float T_Cal_1_B1 = MeasureTemperature(1);
+
+						// Use Cr to estimate pH of mix
+						// Should have the all the other points
+						float pH_Cals[4] = {Calc_pH_TCor(Sols->pH_EEP_Cal_1, T_Cal_1, 25, 0, Sols->K_T_pH_Cal_1),
+								Calc_pH_TCor(Sols->pH_EEP_Cal_2, T_Cal_2, 25, 0, Sols->K_T_pH_Cal_2),
+								Calc_pH_TCor(Sols->pH_EEP_Rinse, T_Rinse, 25, 0, Sols->K_T_pH_Rinse),
+								Calc_pH_TCor(Sols->pH_EEP_Clean, T_Clean, 25, Sols->K_T_pH_Clean_Sq, Sols->K_T_pH_Clean_Ln)};
+						float mV_Cr[4];
+
+						float max_r_squared = 0;
+						float pH_Cr;
+						for(i = 0; i < ISEs.pH_Cr.size; i++)
+						{
+							mV_Cr[0] = ISE_mV_Cal_1[ISEs.pH_Cr.index + i];
+							mV_Cr[1] = ISE_mV_Cal_2[ISEs.pH_Cr.index + i];
+							mV_Cr[2] = ISE_mV_Rinse[ISEs.pH_Cr.index + i];
+							mV_Cr[3] = ISE_mV_Clean[ISEs.pH_Cr.index + i];
+
+							float r_squared = RSQ(pH_Cals, mV_Cr, 4);
+							float best_fit_slope = FindBestFitSlope(pH_Cals, mV_Cr, 4);
+							float best_fit_int = (mV_Cr[0] + mV_Cr[1] + mV_Cr[2] + mV_Cr[3])/4 - best_fit_slope * (pH_Cals[0] + pH_Cals[1] + pH_Cals[2] + pH_Cals[3])/4;
+							float pH_mix = (ISE_mV_Cal_1_B2[ISEs.pH_Cr.index + i] - best_fit_int)/best_fit_slope;
+							DEBUG_PRINT(UARTprintf("pH Cr %d: %d/1000\n", i + 1, (int) (pH_mix * 1000));)
+							if(r_squared > max_r_squared)
+							{
+								max_r_squared = r_squared;
+								pH_Cr = pH_mix;
+							}
+						}
+
+						// Calculate H2 slopes
+						DEBUG_PRINT(UARTprintf("Using Cr sensor pH %d/1000\n", (int) (pH_Cr * 1000));)
+
+						for(i = 0; i < ISEs.pH_H2.size; i++)
+						{
+							float H2_Slope = (ISE_mV_Cal_1_B2[ISEs.pH_H2.index + i] - ISE_mV_Cal_1[ISEs.pH_H2.index + i]) / (pH_Cr - pH_Cals[0]);
+							DEBUG_PRINT(UARTprintf("H2 %d Slope: %d/1000\n", i + 1, (int) (H2_Slope * 1000));)
+						}
+
+						DEBUG_PRINT(UARTprintf("\nAssuming pH of 3.4\n");)
+
+						for(i = 0; i < ISEs.pH_H2.size; i++)
+						{
+							float H2_Slope = (ISE_mV_Cal_1_B2[ISEs.pH_H2.index + i] - ISE_mV_Cal_1[ISEs.pH_H2.index + i]) / (3.4 - pH_Cals[0]);
+							DEBUG_PRINT(UARTprintf("H2 %d Slope: %d/1000\n", i + 1, (int) (H2_Slope * 1000));)
+						}
+
+					}
+#endif
+
 #ifndef VALVE_STRUCT	// Breaks are required to prevent running into the next soltu9ion if using case/switch, but not if using if/else if
 					break;
 #endif
@@ -3965,7 +4086,7 @@ int main(void) {
 #ifdef PH_LOG_K
 						if(Sols->pH_EEP_Cal_2 < 9 && Sols->TH_EEP_Cal_1 != 0)	// This is Cal 3/Cal 4 setup
 						{
-							float Log_K_TH_pH = log10(0.6456 * pow((TH_mV_Cal_1[i] - TH_mV_Rinse[i]), 2) + 24.499 * (TH_mV_Cal_1[i] - TH_mV_Rinse[i]) +1.1208); //2.1;	// TODO: Calculate a Log k
+							float Log_K_TH_pH = log10(0.6456 * pow((TH_mV_Cal_1[i] - TH_mV_Rinse[i]), 2) + 24.499 * (TH_mV_Cal_1[i] - TH_mV_Rinse[i]) +1.1208); //2.1;	// TOD: Calculate a Log k
 							MemoryWrite(Cal_page, OFFSET_TH_1_LOG_K + (i * 4), 4, (uint8_t *) &Log_K_TH_pH);
 						}
 #endif	// PH_LOG_K
@@ -5608,13 +5729,16 @@ int main(void) {
 
 
 				uint8_t FirstPassedCal = Calibration_Status & 1;	// Flag to check if this is the first passed calibration, if it is increase the size of the buffer prime
-				for(i = 1; i < Cal_Number; i++)
+				if(FirstPassedCal != 0)
 				{
-					if(*MemoryRead(Find_Cal_page(i), OFFSET_CAL_STATUS, 4) & 1)
+					for(i = 1; i < Cal_Number; i++)
 					{
-						DEBUG_PRINT(UARTprintf("Found a passed calibration\n");)
-						FirstPassedCal = 0;	// Set flag to 0
-						break;	// Break out of for loop
+						if(*MemoryRead(Find_Cal_page(i), OFFSET_CAL_STATUS, 4) & 1)
+						{
+							DEBUG_PRINT(UARTprintf("Found a passed calibration\n");)
+							FirstPassedCal = 0;	// Set flag to 0
+							break;	// Break out of for loop
+						}
 					}
 				}
 
@@ -5655,6 +5779,7 @@ int main(void) {
 					userDelay(valve_delay, 1);
 				}
 
+#ifndef H2_CALIBRATE_CAL6_B2_MIX
 				DEBUG_PRINT(UARTprintf("Resetting B2...\n");)
 				RunValveToPossition_Bidirectional_AbortReady(V_B2, VALVE_STEPS_PER_POSITION);
 				PumpVolume(FW, PumpVol_tube_prime_buffers, Speed_BufferPrime, 1);
@@ -5666,6 +5791,7 @@ int main(void) {
 				PumpVolume(BW, PumpVol_tube_bubble + 13.77, Speed_ISE, 1);
 				PumpVolume(FW, 13.77, Speed_ISE, 1);
 				userDelay(valve_delay, 1);
+#endif
 
 				DEBUG_PRINT(UARTprintf("Resetting C2...\n");)
 				RunValveToPossition_Bidirectional_AbortReady(V_C2, VALVE_STEPS_PER_POSITION);
@@ -6337,7 +6463,7 @@ int main(void) {
 ////#ifdef PH_LOG_K
 ////						if(Sols->pH_EEP_Cal_2 < 9 && Sols->NH4_EEP_Cal_1 != 0)	// This is Cal 3/Cal 4 setup
 ////						{
-////							float Log_K_NH4_pH = -1;	// TODO: Calculate a Log k
+////							float Log_K_NH4_pH = -1;	// TOD: Calculate a Log k
 ////							MemoryWrite(Cal_page, OFFSET_NH4_1_LOG_K + (i * 4), 4, (uint8_t *) &Log_K_NH4_pH);
 ////						}
 ////#endif	// PH_LOG_K
@@ -7248,7 +7374,7 @@ int main(void) {
 			//			if(Sensor_Config == PH_CL_CART)
 			//				Days_between_calibration = 2;
 
-			if(CheckCalibration(pui8SysStatus, ISEs.CalDelay) == 1 || DEMO_UNIT == 1)		// TODO: Change so calibration is forced if a valid one hasn't been found
+			if(CheckCalibration(pui8SysStatus, ISEs.CalDelay) == 1 || DEMO_UNIT == 1)
 				SetLED(GREEN_BUTTON | GREEN_BUTTON_V, 1);
 			else
 			{
