@@ -4712,12 +4712,19 @@ int main(void) {
 
 							float CondFactorySlope;
 							if(gABoard >= ARV1_0B)
-								CondFactorySlope = Build_float(MemoryRead(PAGE_FACTORY_CAL, OFFSET_FACTORY_COND_SLOPE, 4));
+							{
+								CondFactorySlope = Build_float(MemoryRead(PAGE_FACTORY_CAL, OFFSET_FACTORY_COND_SLOPE_ALT, 4));
+
+								if(CondFactorySlope == 0 || CondFactorySlope != CondFactorySlope)	// Check if there is valid data saved in the memory
+									CondFactorySlope = 0.205;
+							}
 							else
+							{
 								CondFactorySlope = Build_float(MemoryRead(PAGE_FACTORY_CAL, OFFSET_FACTORY_COND_SLOPE, 4));
 
-							if(CondFactorySlope == 0 || CondFactorySlope != CondFactorySlope)	// Check if there is valid data saved in the memory
-								CondFactorySlope = 0.18;
+								if(CondFactorySlope == 0 || CondFactorySlope != CondFactorySlope)	// Check if there is valid data saved in the memory
+									CondFactorySlope = 0.18;
+							}
 
 							int16_t Slope_Percent = ((I_High * 1000000.0 / CalConductivityV3High - I_Mid * 1000000.0 / CalConductivityV2Mid) / (CalConds[2] - CalConds[1])) * 10000.0 / CondFactorySlope;	// Temperature correct slope to 25 then calculate it's percentage of theory
 
