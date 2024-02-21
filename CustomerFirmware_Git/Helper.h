@@ -161,6 +161,11 @@ struct ISEConfig{
 #define CONFIG_V10			18	// 8/24/2022: Across V10 going TH, Cr, NH4, Cr3, Ca moving toward reference
 #define ACROSS_V7_BACKWARDS	19	// 9/26/2022: Across V7 mounted backwards
 #define DISINFECTION_CART	20	// 12/19/2023: Disinfection cartrdige 6 pH then 4 NH4s
+#define DISINFECTION_CART_4NH4_6CR		21		// 2/21/2024: Disinfection cartrdige 4 NH4 then 6 Cr
+#define DISINFECTION_CART_4CR_6NH4		22		// 2/21/2024: Disinfection cartrdige 4 Cr then 6 NH4s
+#define DISINFECTION_CART_6NH4_4CR		23		// 2/21/2024: Disinfection cartrdige 6 NH4 then 4 Cr
+#define DISINFECTION_CART_2CR_6NH4_2CR	24		// 2/21/2024: Disinfection cartrdige 2 Cr then 6 NH4s then 2Cr
+
 
 // Define states in shared file
 #define STATE_IDLE				0

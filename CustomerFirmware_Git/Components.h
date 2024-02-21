@@ -396,7 +396,8 @@ extern uint8_t gui8IO_Ext2_Reg3;
 //#define OFFSET_NITRITE_BLANK		52
 #define OFFSET_FACTORY_COND_SLOPE	52
 #define OFFSET_THERM_CORRECTION		56
-#define OFFSET_FC_ZERO				60	// Placed in the middle because the following data is used during factory calibration but will not be used after and will not be displayed over BT
+#define OFFSET_FACTORY_COND_SLOPE_ALT	60
+//#define OFFSET_FC_ZERO				60	// Placed in the middle because the following data is used during factory calibration but will not be used after and will not be displayed over BT
 
 #define OFFSET_TCL_MID_POINT		88
 #define OFFSET_FCL_MID_POINT		92

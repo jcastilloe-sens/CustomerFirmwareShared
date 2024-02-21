@@ -39,7 +39,7 @@
 								<option id="com.ti.ccstudio.buildDefinitions.TMS470_20.2.compilerID.GCC.313380474" name="Enable support for GCC extensions (DEPRECATED) (--gcc)" superClass="com.ti.ccstudio.buildDefinitions.TMS470_20.2.compilerID.GCC" value="true" valueType="boolean"/>
 								<option IS_BUILTIN_EMPTY="false" IS_VALUE_EMPTY="false" id="com.ti.ccstudio.buildDefinitions.TMS470_20.2.compilerID.DEFINE.1540129287" name="Pre-define NAME (--define, -D)" superClass="com.ti.ccstudio.buildDefinitions.TMS470_20.2.compilerID.DEFINE" valueType="definedSymbols">
 									<listOptionValue builtIn="false" value="ccs=&quot;ccs&quot;"/>
-									<listOptionValue builtIn="false" value="H2_CALIBRATE_CAL6_B2_MIX"/>
+									<listOptionValue builtIn="false" value="xH2_CALIBRATE_CAL6_B2_MIX"/>
 									<listOptionValue builtIn="false" value="UNIVERSAL_PICKING_FUNCTION"/>
 									<listOptionValue builtIn="false" value="VALVE_STRUCT"/>
 									<listOptionValue builtIn="false" value="CURRENT_ADJUSTED_COND"/>

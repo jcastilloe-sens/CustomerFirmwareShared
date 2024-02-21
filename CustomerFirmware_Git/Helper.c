@@ -15048,6 +15048,122 @@ void FillISEStruct(struct ISEConfig *ISEConfig)
 
 		break;
 	}
+	case DISINFECTION_CART_4NH4_6CR:
+	{
+		// Create map between hardware ISE # and firmware ISE #
+		uint8_t TempLocation[10] = {10, 9, 7, 8, 6, 5, 3, 4, 2, 1};
+		memcpy(ISEConfig->Location, TempLocation, 10);
+		ISEConfig->CalDelay = 1;
+		ISEConfig->RunAlk = 0;
+
+		ISEConfig->pH_H2.size = 0;
+		ISEConfig->pH_Cr.size = 6;
+		ISEConfig->TH.size = 0;
+		ISEConfig->NH4.size = 4;
+		ISEConfig->Ca.size = 0;
+
+		ISEConfig->pH_H2.index = 0;
+		ISEConfig->pH_Cr.index = 0;
+		ISEConfig->TH.index = 0;
+		ISEConfig->NH4.index = 6;
+		ISEConfig->Ca.index = 0;
+
+		// Sensor types with 3 spots need 2 bits, all others need 1 bit
+		ISEConfig->pH_H2.StorBit = 0;	// Doubles as alkalinity store bit, therefore must be different from pH Cr
+		ISEConfig->pH_Cr.StorBit = 0;
+		ISEConfig->TH.StorBit = 0;
+		ISEConfig->NH4.StorBit = 4;
+		ISEConfig->Ca.StorBit = 0;
+
+		break;
+	}
+	case DISINFECTION_CART_4CR_6NH4:
+	{
+		// Create map between hardware ISE # and firmware ISE #
+		uint8_t TempLocation[10] = {3, 4, 2, 1, 10, 9, 7, 8, 6, 5};
+		memcpy(ISEConfig->Location, TempLocation, 10);
+		ISEConfig->CalDelay = 1;
+		ISEConfig->RunAlk = 0;
+
+		ISEConfig->pH_H2.size = 0;
+		ISEConfig->pH_Cr.size = 4;
+		ISEConfig->TH.size = 0;
+		ISEConfig->NH4.size = 6;
+		ISEConfig->Ca.size = 0;
+
+		ISEConfig->pH_H2.index = 0;
+		ISEConfig->pH_Cr.index = 0;
+		ISEConfig->TH.index = 0;
+		ISEConfig->NH4.index = 4;
+		ISEConfig->Ca.index = 0;
+
+		// Sensor types with 3 spots need 2 bits, all others need 1 bit
+		ISEConfig->pH_H2.StorBit = 0;	// Doubles as alkalinity store bit, therefore must be different from pH Cr
+		ISEConfig->pH_Cr.StorBit = 0;
+		ISEConfig->TH.StorBit = 0;
+		ISEConfig->NH4.StorBit = 2;
+		ISEConfig->Ca.StorBit = 0;
+
+		break;
+	}
+	case DISINFECTION_CART_6NH4_4CR:
+	{
+		// Create map between hardware ISE # and firmware ISE #
+		uint8_t TempLocation[10] = {10, 9, 7, 8, 6, 5, 3, 4, 2, 1};
+		memcpy(ISEConfig->Location, TempLocation, 10);
+		ISEConfig->CalDelay = 1;
+		ISEConfig->RunAlk = 0;
+
+		ISEConfig->pH_H2.size = 0;
+		ISEConfig->pH_Cr.size = 4;
+		ISEConfig->TH.size = 0;
+		ISEConfig->NH4.size = 6;
+		ISEConfig->Ca.size = 0;
+
+		ISEConfig->pH_H2.index = 0;
+		ISEConfig->pH_Cr.index = 0;
+		ISEConfig->TH.index = 0;
+		ISEConfig->NH4.index = 4;
+		ISEConfig->Ca.index = 0;
+
+		// Sensor types with 3 spots need 2 bits, all others need 1 bit
+		ISEConfig->pH_H2.StorBit = 0;	// Doubles as alkalinity store bit, therefore must be different from pH Cr
+		ISEConfig->pH_Cr.StorBit = 0;
+		ISEConfig->TH.StorBit = 0;
+		ISEConfig->NH4.StorBit = 2;
+		ISEConfig->Ca.StorBit = 0;
+
+		break;
+	}
+	case DISINFECTION_CART_2CR_6NH4_2CR:
+	{
+		// Create map between hardware ISE # and firmware ISE #
+		uint8_t TempLocation[10] = {10, 9, 2, 1, 7, 8, 6, 5, 3, 4};
+		memcpy(ISEConfig->Location, TempLocation, 10);
+		ISEConfig->CalDelay = 1;
+		ISEConfig->RunAlk = 0;
+
+		ISEConfig->pH_H2.size = 0;
+		ISEConfig->pH_Cr.size = 4;
+		ISEConfig->TH.size = 0;
+		ISEConfig->NH4.size = 6;
+		ISEConfig->Ca.size = 0;
+
+		ISEConfig->pH_H2.index = 0;
+		ISEConfig->pH_Cr.index = 0;
+		ISEConfig->TH.index = 0;
+		ISEConfig->NH4.index = 4;
+		ISEConfig->Ca.index = 0;
+
+		// Sensor types with 3 spots need 2 bits, all others need 1 bit
+		ISEConfig->pH_H2.StorBit = 0;	// Doubles as alkalinity store bit, therefore must be different from pH Cr
+		ISEConfig->pH_Cr.StorBit = 0;
+		ISEConfig->TH.StorBit = 0;
+		ISEConfig->NH4.StorBit = 2;
+		ISEConfig->Ca.StorBit = 0;
+
+		break;
+	}
 	default:	// Make the default case the AcrossV7 cartridge as this is what is going to market with
 	{
 		// Create map between hardware ISE # and firmware ISE #

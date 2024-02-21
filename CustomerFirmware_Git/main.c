@@ -341,6 +341,7 @@
 //			2/12/2024: Rewrite previous calibrated status after running Cl cleaning during test to update flag directly in calibrations memory
 //		V01.03.19:	2/13/2024: Added UART commands to rewrite thermistor correction and Turn valve to air or sample
 //		V01.03.20:	2/15/2024: Create an alternate conductivity slope for 5kHz boards to use for the 1kHz signals
+//		V01.03.21:	2/21/2024: Use different conductivity factory cal slopes if running a 1 kHz board or 5 kHz board
 //*****************************************************************************
 #include <stdio.h>
 #include <stdint.h>
@@ -3778,6 +3779,8 @@ int main(void) {
 						PumpVolume(FW, PumpVol_forward - Volume_to_align_pump, Speed_Slow, 1);
 						userDelay(500, 1);
 
+						RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Move valve to sample
+
 						PumpStepperMix(BW, 1500, Speed_ISE, 10);
 
 						userDelay(5000, 1);	// Delay to let diffusion happen
@@ -3838,6 +3841,18 @@ int main(void) {
 							float H2_Slope = (ISE_mV_Cal_1_B2[ISEs.pH_H2.index + i] - ISE_mV_Cal_1[ISEs.pH_H2.index + i]) / (3.4 - pH_Cals[0]);
 							DEBUG_PRINT(UARTprintf("H2 %d Slope: %d/1000\n", i + 1, (int) (H2_Slope * 1000));)
 						}
+
+						// Push air back into Cal 1 port before moving to next solution
+						if(BUBBLES_IN_TUBE)
+						{
+							RunValveToPossition_Bidirectional_AbortReady(V_B2, VALVE_STEPS_PER_POSITION);
+							//				PumpStepperRunStepSpeed_AbortReady(BW, Steps_tube_bubble, Speed_ISE);
+							//				userDelay(valve_delay_after_air, 1);
+							PumpVolume(BW, PumpVol_tube_bubble /*+ 13.77*/, Speed_Slow, 1);
+	//						PumpVolume(FW, 13.77, Speed_Slow, 1);
+							userDelay(valve_delay, 1);
+						}
+
 
 					}
 #endif
@@ -4695,7 +4710,12 @@ int main(void) {
 							if(I_High != I_High)
 								I_High = 43.57 * .812;	// Average from circuits before ARV1_0B
 
-							float CondFactorySlope = Build_float(MemoryRead(PAGE_FACTORY_CAL, OFFSET_FACTORY_COND_SLOPE, 4));
+							float CondFactorySlope;
+							if(gABoard >= ARV1_0B)
+								CondFactorySlope = Build_float(MemoryRead(PAGE_FACTORY_CAL, OFFSET_FACTORY_COND_SLOPE, 4));
+							else
+								CondFactorySlope = Build_float(MemoryRead(PAGE_FACTORY_CAL, OFFSET_FACTORY_COND_SLOPE, 4));
+
 							if(CondFactorySlope == 0 || CondFactorySlope != CondFactorySlope)	// Check if there is valid data saved in the memory
 								CondFactorySlope = 0.18;
 
