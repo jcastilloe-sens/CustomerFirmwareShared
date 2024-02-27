@@ -341,7 +341,9 @@
 //			2/12/2024: Rewrite previous calibrated status after running Cl cleaning during test to update flag directly in calibrations memory
 //		V01.03.19:	2/13/2024: Added UART commands to rewrite thermistor correction and Turn valve to air or sample
 //		V01.03.20:	2/15/2024: Create an alternate conductivity slope for 5kHz boards to use for the 1kHz signals
-//		V01.03.21:	2/21/2024: Use different conductivity factory cal slopes if running a 1 kHz board or 5 kHz board
+//		V01.03.21:	2/19/2024: Added predefine for calibrating H2 in Cal 6 + B2 mix
+//			2/21/2024: Use different conductivity factory cal slopes if running a 1 kHz board or 5 kHz board
+//					Added support for different disinfection configurations
 //*****************************************************************************
 #include <stdio.h>
 #include <stdint.h>
@@ -2613,6 +2615,12 @@ int main(void) {
 								if(Check != 1)
 								{
 									InitWaveGen(1, COND_FREQ);
+
+									// Set high current range
+									// 45 uApp R = 180k
+									IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 0);
+									IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 1);
+
 									attempt++;
 								}
 							}
@@ -2770,6 +2778,12 @@ int main(void) {
 								if(Check != 1)
 								{
 									InitWaveGen(1, COND_FREQ);
+
+									// Set mid current range
+									// 20 uApp R = 430k
+									IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 1);
+									IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 1);
+
 									attempt++;
 								}
 							}
@@ -2962,6 +2976,12 @@ int main(void) {
 							if(Check != 1)
 							{
 								InitWaveGen(1, COND_FREQ);
+
+								// Set mid current range
+								// 20 uApp R = 430k
+								IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 1);
+								IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 1);
+
 								attempt++;
 							}
 						}
@@ -3006,6 +3026,12 @@ int main(void) {
 							if(Check != 1)
 							{
 								InitWaveGen(1, COND_FREQ);
+
+								// Set high current range
+								// 45 uApp R = 180k
+								IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 0);
+								IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 1);
+
 								attempt++;
 							}
 						}
@@ -3233,6 +3259,12 @@ int main(void) {
 										if(Check != 1)
 										{
 											InitWaveGen(1, COND_FREQ);
+
+											// Set mid current range
+											// 20 uApp R = 430k
+											IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 1);
+											IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 1);
+
 											attempt++;
 										}
 									}
@@ -3277,6 +3309,12 @@ int main(void) {
 										if(Check != 1)
 										{
 											InitWaveGen(1, COND_FREQ);
+
+											// Set high current range
+											// 45 uApp R = 180k
+											IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 0);
+											IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 1);
+
 											attempt++;
 										}
 									}
@@ -3654,6 +3692,12 @@ int main(void) {
 								if(Check != 1)
 								{
 									InitWaveGen(1, COND_FREQ);
+
+									// Set mid current range
+									// 20 uApp R = 430k
+									IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 1);
+									IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 1);
+
 									attempt++;
 								}
 							}
@@ -3700,6 +3744,12 @@ int main(void) {
 								if(Check != 1)
 								{
 									InitWaveGen(1, COND_FREQ);
+
+									// Set high current range
+									// 45 uApp R = 180k
+									IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 0);
+									IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 1);
+
 									attempt++;
 								}
 							}

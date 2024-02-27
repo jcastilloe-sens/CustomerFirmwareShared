@@ -46,7 +46,7 @@
 									<listOptionValue builtIn="false" value="xLIFETIME_TESTING"/>
 									<listOptionValue builtIn="false" value="EXPIRATION_DATE"/>
 									<listOptionValue builtIn="false" value="xREMAINING_DAYS_MAX_CALS"/>
-									<listOptionValue builtIn="false" value="PRINT_UART"/>
+									<listOptionValue builtIn="false" value="xPRINT_UART"/>
 									<listOptionValue builtIn="false" value="xBLEACH_POUCH"/>
 									<listOptionValue builtIn="false" value="NH4_PH_CORR"/>
 									<listOptionValue builtIn="false" value="xCV_MEASUREMENT"/>
@@ -72,7 +72,7 @@
 									<listOptionValue builtIn="false" value="xPREMIX_ALK"/>
 									<listOptionValue builtIn="false" value="LOOSE_VALVE"/>
 									<listOptionValue builtIn="false" value="xMIX_WHILE_CLEANING"/>
-									<listOptionValue builtIn="false" value="TESTING_MODE"/>
+									<listOptionValue builtIn="false" value="xTESTING_MODE"/>
 									<listOptionValue builtIn="false" value="xKEEP_VALVE_AWAKE"/>
 									<listOptionValue builtIn="false" value="I2C_LED_IOEXT"/>
 									<listOptionValue builtIn="false" value="OAD"/>

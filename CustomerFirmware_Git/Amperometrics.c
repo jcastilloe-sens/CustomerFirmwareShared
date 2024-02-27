@@ -189,6 +189,13 @@ float CalculateCurrentCalibrated(float ADC_Voltage, float DAC_Voltage, uint8_t H
 			ResistorRatio = 1;
 		}
 	}
+#ifdef HIGH_PLATING_CURRENT
+	else if(High_current_switch == 3)
+	{
+			Resistance = 2200;
+			ResistorRatio = 1;
+	}
+#endif
 	else
 	{
 		EEPROMRead((uint32_t *) &Resistance, OFFSET_CL_LOW_R, 4);
@@ -3377,7 +3384,9 @@ float MeasureConductivity(struct SolutionVals* Sols, uint8_t Test_Number)
 
 			ConductivityReading = ConductivityMovingAvg(1000);		// uV
 
+			ConnectMemory(1);
 			float CalConductivitySlopeLow_1k = Build_float(MemoryRead(PAGE_CAL, OFFSET_CAL_COND_LOW_ALT_SLOPE, 4));
+			ConnectMemory(0);
 
 			if(CalConductivitySlopeLow_1k == CalConductivitySlopeLow_1k)
 				Conductivity = (I_Low_Alt / ConductivityReading - CalConductivityKLow) * 1000000 / CalConductivitySlopeLow_1k;

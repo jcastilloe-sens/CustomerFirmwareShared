@@ -42,6 +42,7 @@
 
 extern float CalculateCurrent(float ADC_Voltage, float DAC_Voltage, uint8_t High_current_switch);
 
+extern float CalculateCurrentCalibrated(float ADC_Voltage, float DAC_Voltage, uint8_t High_current_switch);
 //extern float * ADCReadAll(void);
 
 extern float * CurrentTimeRead(uint8_t ui8Channel, int ADC_CS_PIN, float seconds, int DAC_Voltage, uint8_t High_current_switch, float period);
