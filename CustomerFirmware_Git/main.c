@@ -344,6 +344,7 @@
 //		V01.03.21:	2/19/2024: Added predefine for calibrating H2 in Cal 6 + B2 mix
 //			2/21/2024: Use different conductivity factory cal slopes if running a 1 kHz board or 5 kHz board
 //					Added support for different disinfection configurations
+//		V01.03.22: 2/28/2024: Adding ability to specify QC points to run from UART that will red light/green light them automatically
 //*****************************************************************************
 #include <stdio.h>
 #include <stdint.h>
@@ -414,12 +415,13 @@
 
 #ifdef TESTING_MODE
 uint8_t g_RerunCal = 1;
+uint8_t g_QCSolution = 0;
 #define RERUN_CALIBRATION	1 & g_RerunCal	// 1 will rerun a calibration if it fails or repump a solution if only 1 solution had a problem, 0 will just run the calibration without rerunning anything
 #define PRIME_POUCH_TUBES	1	// 1 will purge pouch tubes on the first calibration, I am going to allow UART control to do it to later calibrations as well, 0 will not
 uint8_t PrimePouchTubes = 0;
 #else
 #define RERUN_CALIBRATION	1	// 1 will rerun a calibration if it fails or repump a solution if only 1 solution had a problem, 0 will just run the calibration without rerunning anything
-#define PRIME_POUCH_TUBES	0	// 1 will purge pouch tubes on the first calibration, I am going to allow UART control to do it to later calibrations as well, 0 will not
+#define PRIME_POUCH_TUBES	1	// 1 will purge pouch tubes on the first calibration, I am going to allow UART control to do it to later calibrations as well, 0 will not
 uint8_t PrimePouchTubes = 0;
 #endif
 //#define CHECK_NEGATIVE		0	// 1 will check that calculated values that can't be negative aren't, if they are set them to 0; 0 will output whatever is calculated
@@ -1042,7 +1044,7 @@ int main(void) {
 //			DEBUG_PRINT(UARTprintf("To turn on/off FCl, TCl, or Alk type F, T, or A\n");)
 
 			DEBUG_PRINT(UARTprintf("UART Commands:\nA: Alkalinity\nF: Free Chlorine\nT: Total Chlorine\nP: Pump sample vial\nC: Auto Calibration\nR: Rerun Cal\nB: Prime bubbles out of pouch tubes\n");)
-			DEBUG_PRINT(UARTprintf("V: Turn and store valve\nM: Write to memory\n");)
+			DEBUG_PRINT(UARTprintf("V: Turn and store valve\nM: Write to memory\nQ: Run QC sample\n");)
 #endif
 
 			while(g_state == STATE_IDLE)
@@ -1128,12 +1130,25 @@ int main(void) {
 						}
 					}
 
-					if(Command == 'F')
+					// Simple On/Off commands
+					if(Command == 'F' || Command == 'T' || Command == 'A' || Command == 'R' || Command == 'B' || Command == 'Q')
 					{
 						uint8_t check = 1;
 						DEBUG_PRINT(UARTprintf("\n");)
 
-						DEBUG_PRINT(UARTprintf("Type 1 to turn on FCl, type 0 to turn off FCl\n");)
+
+						if(Command == 'F')
+						{DEBUG_PRINT(UARTprintf("Type 1 to turn on FCl, type 0 to turn off FCl\n");)}
+						else if(Command == 'T')
+						{DEBUG_PRINT(UARTprintf("Type 1 to turn on TCl, type 0 to turn off TCl\n");)}
+						else if(Command == 'A')
+						{DEBUG_PRINT(UARTprintf("Type 1 to turn on Alk, type 0 to turn off Alk\n");)}
+						else if(Command == 'R')
+						{DEBUG_PRINT(UARTprintf("Type 1 to turn on Rerun Cal, type 0 to turn off\n");)}
+						else if(Command == 'B')
+						{DEBUG_PRINT(UARTprintf("Type 1 to run pouch tube priming during next Cal, anything else to cancel\n");)}
+						else if(Command == 'Q')
+						{DEBUG_PRINT(UARTprintf("Type 1-5 to specify which QC sample to run\n");)}
 
 						while(check == 1)
 						{
@@ -1142,117 +1157,70 @@ int main(void) {
 								int32_t UART_Rx = UARTCharGet(UART0_BASE);
 								UARTCharPutNonBlocking(UART0_BASE, UART_Rx); //echo character
 
-								if(UART_Rx == '1')	// 0x0D = enter; use hex because UART_Rx is defined as int32_t because thats what UARTCharGet returns
+								if(Command == 'Q' && UART_Rx >= '1' && UART_Rx <= '5')
 								{
 									check = 2;
-
-									g_FreeCl = 1;
-
-									EEPROMProgram((uint32_t *) &g_FreeCl, OFFSET_FREE_CL_CYCLE, 4);	// This gets read back in update_MonoCl() which is called in InitBT()
+									g_QCSolution = UART_Rx - '0';
+									g_ui32DataRx0[0] = START_TEST;
+									g_ulSSI0RXTO++;
 								}
-								else if(UART_Rx == '0')
+								else if(UART_Rx == '0' || UART_Rx == '1')	// 0x0D = enter; use hex because UART_Rx is defined as int32_t because thats what UARTCharGet returns
 								{
 									check = 2;
-
-									g_FreeCl = 0;
-
-									EEPROMProgram((uint32_t *) &g_FreeCl, OFFSET_FREE_CL_CYCLE, 4);	// This gets read back in update_MonoCl() which is called in InitBT()
+									if(Command == 'F')
+										g_FreeCl = UART_Rx - '0';
+									else if(Command == 'T')
+										g_MonoCl = UART_Rx - '0';
+									else if(Command == 'A')
+										g_Alkalinity = UART_Rx - '0';
+									else if(Command == 'R')
+										g_RerunCal = UART_Rx - '0';
+									else if(Command == 'B')
+										PrimePouchTubes = UART_Rx - '0';
+									else // Catching the case
+										check = 0;
 								}
 								else
 									check = 0;
+							}
+						}
 
+						if(check == 0)
+						{
+							DEBUG_PRINT(UARTprintf("Cancelling!\n");)
+						}
+						else if(check == 2)	// Check was  a valid command
+						{
+
+							if(Command == 'F')
+							{
+								EEPROMProgram((uint32_t *) &g_FreeCl, OFFSET_FREE_CL_CYCLE, 4);	// This gets read back in update_MonoCl() which is called in InitBT()
 								DEBUG_PRINT(UARTprintf("\nFCl: %d\n", g_FreeCl);)
 								update_MonoCl();
 							}
-						}
-
-						if(check == 0)
-						{
-							DEBUG_PRINT(UARTprintf("Cancelling!\n");)
-						}
-					}
-
-					if(Command == 'T')
-					{
-						uint8_t check = 1;
-						DEBUG_PRINT(UARTprintf("\n");)
-
-						DEBUG_PRINT(UARTprintf("Type 1 to turn on TCl, type 0 to turn off TCl\n");)
-
-						while(check == 1)
-						{
-							if(UARTCharsAvail(UART0_BASE))
+							else if(Command == 'T')
 							{
-								int32_t UART_Rx = UARTCharGet(UART0_BASE);
-								UARTCharPutNonBlocking(UART0_BASE, UART_Rx); //echo character
-
-								if(UART_Rx == '1')	// 0x0D = enter; use hex because UART_Rx is defined as int32_t because thats what UARTCharGet returns
-								{
-									check = 2;
-
-									g_MonoCl = 1;
-
-									EEPROMProgram((uint32_t *) &g_MonoCl, OFFSET_MONO_CL_CYCLE, 4);	// This gets read back in update_MonoCl() which is called in InitBT()
-								}
-								else if(UART_Rx == '0')
-								{
-									check = 2;
-
-									g_MonoCl = 0;
-
-									EEPROMProgram((uint32_t *) &g_MonoCl, OFFSET_MONO_CL_CYCLE, 4);	// This gets read back in update_MonoCl() which is called in InitBT()
-								}
-								else
-									check = 0;
-
+								EEPROMProgram((uint32_t *) &g_MonoCl, OFFSET_MONO_CL_CYCLE, 4);	// This gets read back in update_MonoCl() which is called in InitBT()
 								DEBUG_PRINT(UARTprintf("\nTCl: %d\n", g_MonoCl);)
 								update_MonoCl();
 							}
-						}
-
-						if(check == 0)
-						{
-							DEBUG_PRINT(UARTprintf("Cancelling!\n");)
-						}
-					}
-
-					if(Command == 'A')
-					{
-						uint8_t check = 1;
-						DEBUG_PRINT(UARTprintf("\n");)
-
-						DEBUG_PRINT(UARTprintf("Type 1 to turn on Alk, type 0 to turn off Alk\n");)
-
-						while(check == 1)
-						{
-							if(UARTCharsAvail(UART0_BASE))
+							else if(Command == 'A')
 							{
-								int32_t UART_Rx = UARTCharGet(UART0_BASE);
-								UARTCharPutNonBlocking(UART0_BASE, UART_Rx); //echo character
-
-								if(UART_Rx == '1')	// 0x0D = enter; use hex because UART_Rx is defined as int32_t because thats what UARTCharGet returns
-								{
-									check = 2;
-									g_Alkalinity = 1;
-									EEPROMProgram((uint32_t *) &g_Alkalinity, OFFSET_ALKALINITY_CYCLE, 4);	// This gets read back in update_Alkalinity() which is called in InitBT()
-								}
-								else if(UART_Rx == '0')
-								{
-									check = 2;
-									g_Alkalinity = 0;
-									EEPROMProgram((uint32_t *) &g_Alkalinity, OFFSET_ALKALINITY_CYCLE, 4);	// This gets read back in update_Alkalinity() which is called in InitBT()
-								}
-								else
-									check = 0;
-
+								EEPROMProgram((uint32_t *) &g_Alkalinity, OFFSET_ALKALINITY_CYCLE, 4);	// This gets read back in update_Alkalinity() which is called in InitBT()
 								DEBUG_PRINT(UARTprintf("\nAlk: %d\n", g_Alkalinity);)
 								update_Alkalinity();
 							}
-						}
+							else if(Command == 'R')
+							{
+								uint32_t holder = g_RerunCal;
+								EEPROMProgram(&holder, OFFSET_CAL_RERUN, 4);	// This gets read back in update_MonoCl() which is called in InitBT()
+								DEBUG_PRINT(UARTprintf("\nRerun Cal: %d\n", g_RerunCal);)
+							}
+							else if(Command == 'B')
+							{
+								DEBUG_PRINT(UARTprintf("\nNext cal prime pouch tubes: %d\n", PrimePouchTubes);)
+							}
 
-						if(check == 0)
-						{
-							DEBUG_PRINT(UARTprintf("Cancelling!\n");)
 						}
 					}
 
@@ -1349,83 +1317,6 @@ int main(void) {
 							{DEBUG_PRINT(UARTprintf("Sat\n");)}
 
 							update_Auto_Cal();
-						}
-					}
-
-					if(Command == 'R')
-					{
-						uint8_t check = 1;
-						DEBUG_PRINT(UARTprintf("\n");)
-
-						DEBUG_PRINT(UARTprintf("Type 1 to turn on Rerun Cal, type 0 to turn off\n");)
-
-						while(check == 1)
-						{
-							if(UARTCharsAvail(UART0_BASE))
-							{
-								int32_t UART_Rx = UARTCharGet(UART0_BASE);
-								UARTCharPutNonBlocking(UART0_BASE, UART_Rx); //echo character
-
-								if(UART_Rx == '1')	// 0x0D = enter; use hex because UART_Rx is defined as int32_t because thats what UARTCharGet returns
-								{
-									check = 2;
-
-									g_RerunCal = 1;
-									uint32_t holder = 1;
-
-									EEPROMProgram(&holder, OFFSET_CAL_RERUN, 4);	// This gets read back in update_MonoCl() which is called in InitBT()
-								}
-								else if(UART_Rx == '0')
-								{
-									check = 2;
-
-									g_RerunCal = 0;
-									uint32_t holder = 0;
-
-									EEPROMProgram(&holder, OFFSET_CAL_RERUN, 4);	// This gets read back in update_MonoCl() which is called in InitBT()
-								}
-								else
-									check = 0;
-
-								DEBUG_PRINT(UARTprintf("\nRerun Cal: %d\n", g_RerunCal);)
-							}
-						}
-
-						if(check == 0)
-						{
-							DEBUG_PRINT(UARTprintf("Cancelling!\n");)
-						}
-					}
-
-					if(Command == 'B')
-					{
-						uint8_t check = 1;
-						DEBUG_PRINT(UARTprintf("\n");)
-						DEBUG_PRINT(UARTprintf("Type 1 to run pouch tube priming during next Cal, anything else to cancel\n");)
-
-						while(check == 1)
-						{
-							if(UARTCharsAvail(UART0_BASE))
-							{
-								int32_t UART_Rx = UARTCharGet(UART0_BASE);
-								UARTCharPutNonBlocking(UART0_BASE, UART_Rx); //echo character
-
-								if(UART_Rx == '1')	// 0x0D = enter; use hex because UART_Rx is defined as int32_t because thats what UARTCharGet returns
-								{
-									check = 2;
-
-									PrimePouchTubes = 1;
-									DEBUG_PRINT(UARTprintf("\nNext cal will prime pouch tubes, resetting ROAM will cancel\n");)
-								}
-								else
-									check = 0;
-
-							}
-						}
-
-						if(check == 0)
-						{
-							DEBUG_PRINT(UARTprintf("Cancelling!\n");)
 						}
 					}
 
