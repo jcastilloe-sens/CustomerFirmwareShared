@@ -419,7 +419,7 @@ uint8_t g_RerunCal = 1;
 uint8_t PrimePouchTubes = 0;
 #else
 #define RERUN_CALIBRATION	1	// 1 will rerun a calibration if it fails or repump a solution if only 1 solution had a problem, 0 will just run the calibration without rerunning anything
-#define PRIME_POUCH_TUBES	0	// 1 will purge pouch tubes on the first calibration, I am going to allow UART control to do it to later calibrations as well, 0 will not
+#define PRIME_POUCH_TUBES	1	// 1 will purge pouch tubes on the first calibration, I am going to allow UART control to do it to later calibrations as well, 0 will not
 uint8_t PrimePouchTubes = 0;
 #endif
 //#define CHECK_NEGATIVE		0	// 1 will check that calculated values that can't be negative aren't, if they are set them to 0; 0 will output whatever is calculated
