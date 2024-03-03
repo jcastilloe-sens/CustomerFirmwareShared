@@ -885,6 +885,10 @@ int main(void) {
 
 			SetLED(RED_BUTTON | GREEN_BUTTON | BLUE_BUTTON | RED_BUTTON_V | GREEN_BUTTON_V | BLUE_BUTTON_V, 0);
 
+#ifdef TESTING_MODE
+			g_QCSolution = 0;	// Reset this to 0 when entering idle in case it
+#endif
+
 			update_Status(STATUS_IDLE, OPERATION_IDLE);
 			while(GPIOPinRead(IO_BUTTON_BASE, IO_BUTTON_PIN) == 0);	// Wait for BT to release button right after setting status
 
@@ -1177,7 +1181,7 @@ int main(void) {
 										g_RerunCal = UART_Rx - '0';
 									else if(Command == 'B')
 										PrimePouchTubes = UART_Rx - '0';
-									else // Catching the case
+									else // Catching the case where the command was Q 0 was typed
 										check = 0;
 								}
 								else
@@ -13892,6 +13896,244 @@ int main(void) {
 
 			PrintTime();
 
+#ifdef TESTING_MODE
+
+			// TODO: Work out the QC stuff
+			// Set the standard methods based on the QC solution
+			uint8_t qc_passed = 1;
+			if(g_QCSolution >= 1 && g_QCSolution <= 5)
+			{
+				float pH_SM, Ca_SM, TH_SM, NH4_SM, FCl_SM, TCl_SM, Alk_SM, Cond_SM;
+
+				if(g_QCSolution == 1)
+				{
+					pH_SM = 6.49;
+					Ca_SM = 1000;
+					TH_SM = 1400;
+					NH4_SM = 5;
+					FCl_SM = 0;
+					TCl_SM = 0;
+					Alk_SM = 44;
+					Cond_SM = 3230;
+				}
+				else if(g_QCSolution == 2)
+				{
+					pH_SM = 7;
+					Ca_SM = 500;
+					TH_SM = 800;
+					NH4_SM = 0;
+					FCl_SM = 0.5;
+					TCl_SM = 0.5;
+					Alk_SM = 300;
+					Cond_SM = 2410;
+				}
+				else if(g_QCSolution == 3)
+				{
+					pH_SM = 7.5;
+					Ca_SM = 150;
+					TH_SM = 180;
+					NH4_SM = 0;
+					FCl_SM = 5;
+					TCl_SM = 5;
+					Alk_SM = 100;
+					Cond_SM = 941;
+				}
+				else if(g_QCSolution == 4)
+				{
+					pH_SM = 8.27;
+					Ca_SM = 20;
+					TH_SM = 40;
+					NH4_SM = 0.1;
+					FCl_SM = 0;
+					TCl_SM = 2;
+					Alk_SM = 20;
+					Cond_SM = 666;
+				}
+				else if(g_QCSolution == 5)
+				{
+					pH_SM = 9.49;
+					Ca_SM = 10;
+					TH_SM = 25;
+					NH4_SM = 0;
+					FCl_SM = 0.2;
+					TCl_SM = 0.2;
+					Alk_SM = 200;
+					Cond_SM = 345;
+				}
+
+				for(i = 0; i < ISEs.pH_Cr.size; i++)
+				{
+					float pH_Cr_Samp_25 = Calc_pH_TCor(pH_Cr_Samp[i], 25, T_Therm, K_T_pH_Samp_Sq, K_T_pH_Samp_Ln);
+					if(abs_val(pH_Cr_Samp_25 - pH_SM) > 0.1)
+					{
+						qc_passed = 0;
+						DEBUG_PRINT(UARTprintf("pH spot %d out of bounds!\n", i + 1);)
+					}
+				}
+				for(i = 0; i < ISEs.TH.size; i++)
+				{
+					float TH_Bound = TH_SM * .1;
+					if(TH_Bound < 10)
+					{
+						TH_Bound = 10;
+					}
+
+					if(abs_val(TH_corr[i] - TH_SM) > TH_Bound)
+					{
+						qc_passed = 0;
+						DEBUG_PRINT(UARTprintf("TH spot %d out of bounds!\n", i + 1);)
+					}
+				}
+				for(i = 0; i < ISEs.NH4.size; i++)
+				{
+					float NH4_Bound = NH4_SM * .1;
+					if(NH4_Bound < .1)
+					{
+						NH4_Bound = .1;
+					}
+
+					if(abs_val(NH4_NH3_N_Free[i] - NH4_SM) > NH4_Bound)
+					{
+						qc_passed = 0;
+						DEBUG_PRINT(UARTprintf("NH4 spot %d out of bounds!\n", i + 1);)
+					}
+				}
+				for(i = 0; i < ISEs.Ca.size; i++)
+				{
+					float Ca_Bound = Ca_SM * .1;
+					if(Ca_Bound < 10)
+					{
+						Ca_Bound = 10;
+					}
+
+					if(abs_val(Ca_Hardness[i] - Ca_SM) > Ca_Bound)
+					{
+						qc_passed = 0;
+						DEBUG_PRINT(UARTprintf("Ca spot %d out of bounds!\n", i + 1);)
+					}
+				}
+
+				if(MEASURE_ALKALINITY)
+				{
+					if(Alk_Samp[T_Chosen_Alk] != Alk_Samp[T_Chosen_Alk])
+					{
+						qc_passed = 0;
+						DEBUG_PRINT(UARTprintf("Alk mixing failed!\n");)
+					}
+					else
+					{
+						float Alk_Bound = Alk_SM * .1;
+						if(Alk_Bound < 10)
+						{
+							Alk_Bound = 10;
+						}
+
+						for(i = 0; i < ISEs.pH_H2.size; i++)
+						{
+							if(abs_val(Alk_Samp[i] - Alk_SM) > Alk_Bound)
+							{
+								qc_passed = 0;
+								DEBUG_PRINT(UARTprintf("Alk spot %d out of bounds!\n", i + 1);)
+							}
+						}
+					}
+				}
+
+				float Cond_Bound = Cond_SM * .1;
+				if(Cond_Bound < 20)
+				{
+					Cond_Bound = 20;
+				}
+
+				if(abs_val(Conductivity - Cond_SM) > Cond_Bound)
+				{
+					qc_passed = 0;
+					DEBUG_PRINT(UARTprintf("Conductivity out of bounds!\n");)
+				}
+
+				if(gui32Error & CL_CLEANING_OUT_OF_RANGE != 0)
+				{
+					qc_passed = 0;
+					DEBUG_PRINT(UARTprintf("Cl Cleaning failed preventing FCl and TCl from running!\n");)
+				}
+				else
+				{
+					if(MEASURE_FCL)
+					{
+						if(Cl_FCl_ppm != Cl_FCl_ppm)
+						{
+							qc_passed = 0;
+							DEBUG_PRINT(UARTprintf("FCl mixing failed!\n");)
+						}
+						else
+						{
+							float FCl_Bound = FCl_SM * .1;
+							if(FCl_Bound < .1)
+							{
+								FCl_Bound = .1;
+							}
+
+							if(abs_val(Cl_FCl_ppm - FCl_SM) > FCl_Bound)
+							{
+								qc_passed = 0;
+								DEBUG_PRINT(UARTprintf("FCl out of bounds!\n");)
+							}
+						}
+
+					}
+
+					if(MEASURE_TCL)
+					{
+						if(Cl_TCl_ppm != Cl_TCl_ppm)
+						{
+							qc_passed = 0;
+							DEBUG_PRINT(UARTprintf("TCl mixing failed!\n");)
+						}
+						else
+						{
+							float TCl_Bound = TCl_SM * .1;
+							if(TCl_Bound < .1)
+							{
+								TCl_Bound = .1;
+							}
+
+							if(abs_val(Cl_TCl_ppm - TCl_SM) > TCl_Bound)
+							{
+								qc_passed = 0;
+								DEBUG_PRINT(UARTprintf("TCl out of bounds!\n");)
+							}
+						}
+					}
+				}
+
+
+				SetLED(GREEN_BUTTON_BLINK, 0);
+				if((gui32Error & FAILED_TEST) != 0 || qc_passed == 0)
+				{
+					SetLED(RED_BUTTON | RED_BUTTON_V, 1);
+				}
+				else
+				{
+					SetLED(GREEN_BUTTON | GREEN_BUTTON_V, 1);
+					DEBUG_PRINT(UARTprintf("QC PASSED\n");)
+				}
+			}
+			else
+			{
+				SetLED(GREEN_BUTTON_BLINK, 0);
+				if((gui32Error & FAILED_TEST) == 0 || DEMO_UNIT == 1)
+				{
+					SetLED(GREEN_BUTTON | GREEN_BUTTON_V, 1);
+				}
+				else
+				{
+					SetLED(RED_BUTTON | RED_BUTTON_V, 1);
+				}
+			}
+
+			g_QCSolution = 0;
+
+#else
 			SetLED(GREEN_BUTTON_BLINK, 0);
 			if((gui32Error & FAILED_TEST) == 0 || DEMO_UNIT == 1)
 			{
@@ -13901,6 +14143,7 @@ int main(void) {
 			{
 				SetLED(RED_BUTTON | RED_BUTTON_V, 1);
 			}
+#endif
 
 			counter = 0;
 			while(GPIOPinRead(IO_BUTTON_BASE, IO_BUTTON_PIN) == IO_BUTTON_PIN && counter < TIMEOUT)
