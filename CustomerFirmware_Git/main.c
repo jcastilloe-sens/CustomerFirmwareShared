@@ -10835,7 +10835,6 @@ int main(void) {
 					DEBUG_PRINT(UARTprintf("pH Cr:\t=%d/1000\t=%d/1000\n", (int) (pH_Samp_T1[ISEs.pH_Cr.index] * 1000), (int) (pH_Samp_T1[ISEs.pH_Cr.index + 1] * 1000));)
 					DEBUG_PRINT(UARTprintf("NH4 of mixed T1:\t=%d/1000\t=%d/1000\n\n", (int) (NH4_NH3_N_Free[0] * 1000), (int) (NH4_NH3_N_Free[1] * 1000));)
 
-
 #ifndef UNIVERSAL_PICKING_FUNCTION
 					T_Chosen_NH4 = Choose_NH4_Sensor(Cal_Number, NH4_NH3_N_Free, NH4_E_Rinse, ISEs, Sols);
 #else	// UNIVERSAL_PICKING_FUNCTION
@@ -10857,6 +10856,9 @@ int main(void) {
 
 					for(i = 0; i < 10; i++)
 						MemoryWrite(Test_page, OFFSET_RAW_ISE_1_SAMP + (i * 4), 4, (uint8_t *) &ISE_E_Samp[i]);
+
+					MemoryWrite(Test_page, OFFSET_NH4_T1_MIX_PH, 4, (uint8_t *) &pH_Samp_T1[T_Chosen_pH_T1]);
+					MemoryWrite(Test_page, OFFSET_NH4_T1_MIX_VOL, 4, (uint8_t *) &Volume_T1_End);
 
 					update_Test(Test_Number);
 				}

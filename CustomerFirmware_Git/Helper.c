@@ -7004,9 +7004,23 @@ void MemoryDump(uint8_t Print_as_mg_hardness, uint8_t Die_RevD)
 
 		// NH4
 		float *NH4_NH3_N_Free = &ISE_Reading[ISEs.NH4.index];
+		float NH4_Alpha = 1;
+		float pH_Cr_Samp_NH4T1;
+		float Volume_NH4T1_Mix = 0;
+		if(pH_Cr_Samp[T_Chosen_pH] >= 8.5)
+		{
+			pH_Cr_Samp_NH4T1 = Build_float(MemoryRead(Test_page, OFFSET_NH4_T1_MIX_PH, 4));
+			Volume_NH4T1_Mix = Build_float(MemoryRead(Test_page, OFFSET_NH4_T1_MIX_VOL, 4));
+			if(pH_Cr_Samp_NH4T1 != pH_Cr_Samp_NH4T1 || Volume_NH4T1_Mix != Volume_NH4T1_Mix)
+				NH4_Alpha = 1;
+			else
+				NH4_Alpha = pow(10, -pH_Cr_Samp_NH4T1) / (pow(10, -pH_Cr_Samp_NH4T1) + pow(10, -(0.09018 + 2729.92/T_RS)));
+		}
+		else
+		{
+			NH4_Alpha = pow(10, -pH_Cr_Samp[T_Chosen_pH]) / (pow(10, -pH_Cr_Samp[T_Chosen_pH]) + pow(10, -(0.09018 + 2729.92/T_RS)));
+		}
 
-//		float NH4_Alpha = pow(10, -pH_Cr_Samp[T_Chosen_pH]) / (pow(10, -pH_Cr_Samp[T_Chosen_pH]) + pow(10, -(0.09018 + 2729.92/T_RS)));
-		float NH4_Alpha = Build_float(MemoryRead(Test_page, OFFSET_TEST_FREE_NH4, 4)) /  Build_float(MemoryRead(Test_page, OFFSET_TEST_TOTAL_NH4, 4));
 //		float NH4_Samp[3];
 //		float NH4_Slope_SampT[3];//, NH4_E_Samp_TCor[3];
 
@@ -7060,7 +7074,7 @@ void MemoryDump(uint8_t Print_as_mg_hardness, uint8_t Die_RevD)
 			float Activity_NH4 = Activity_Total - Activity_K - Activity_Na;
 //#endif // PH_LOG_K
 
-			float NH4_Ammonium = Activity_NH4 / Lambda_NH4(T_RS, IS) * 14000;
+			float NH4_Ammonium = Activity_NH4 / Lambda_NH4(T_RS, IS) * 14000 * (117.6 + Volume_NH4T1_Mix) / 117.6;
 			NH4_NH3_N_Free[i] = NH4_Ammonium / NH4_Alpha;
 		}
 
@@ -7402,6 +7416,7 @@ void MemoryDump(uint8_t Print_as_mg_hardness, uint8_t Die_RevD)
 	UARTprintf("\tB2 Mix Therm Temp");
 	UARTprintf("\tUser ID");
 	UARTprintf("\tLocation ID");
+	UARTprintf("\tNH4 T1 Mix pH\tNH4 T1 Mix Vol");
 	UARTprintf("\n");
 
 	for(k = 1; k < (Test_Number + 1); k++)
@@ -7625,6 +7640,9 @@ void MemoryDump(uint8_t Print_as_mg_hardness, uint8_t Die_RevD)
 
 		UARTprintf("\t=%d", *((uint32_t *) MemoryRead(Test_page, OFFSET_TEST_USER_NAME, 4)));
 		UARTprintf("\t=%d", *((uint32_t *) MemoryRead(Test_page, OFFSET_TEST_LOCATION, 4)));
+
+		UARTprintf("\t%d/1000", (int) (Build_float(MemoryRead(Test_page, OFFSET_NH4_T1_MIX_PH, 4)) * 1000));
+		UARTprintf("\t%d/1000", (int) (Build_float(MemoryRead(Test_page, OFFSET_NH4_T1_MIX_VOL, 4)) * 1000));
 
 		UARTprintf("\n");
 
