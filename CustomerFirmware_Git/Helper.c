@@ -7005,7 +7005,8 @@ void MemoryDump(uint8_t Print_as_mg_hardness, uint8_t Die_RevD)
 		// NH4
 		float *NH4_NH3_N_Free = &ISE_Reading[ISEs.NH4.index];
 
-		float NH4_Alpha = pow(10, -pH_Cr_Samp[T_Chosen_pH]) / (pow(10, -pH_Cr_Samp[T_Chosen_pH]) + pow(10, -(0.09018 + 2729.92/T_RS)));
+//		float NH4_Alpha = pow(10, -pH_Cr_Samp[T_Chosen_pH]) / (pow(10, -pH_Cr_Samp[T_Chosen_pH]) + pow(10, -(0.09018 + 2729.92/T_RS)));
+		float NH4_Alpha = Build_float(MemoryRead(Test_page, OFFSET_TEST_FREE_NH4, 4)) /  Build_float(MemoryRead(Test_page, OFFSET_TEST_TOTAL_NH4, 4));
 //		float NH4_Samp[3];
 //		float NH4_Slope_SampT[3];//, NH4_E_Samp_TCor[3];
 
