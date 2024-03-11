@@ -346,6 +346,7 @@
 //					Added support for different disinfection configurations
 //		V01.03.22: 2/28/2024: Adding ability to specify QC points to run from UART that will red light/green light them automatically
 //			3/3/2024: Adjusting H2 readings in alk mix based on the Cr reading, only if H2 reading is higher pH than Cr, as the likely cause is due to single point offset issues
+//		V01.03.23: 3/11/2024: Alk when adding acid because first mix is close to endpoint calculate volume to shift pH 0.3, if first mix is in bounds but second isn't calculate to get second mix in bounds rather than just give up
 //*****************************************************************************
 #include <stdio.h>
 #include <stdint.h>
@@ -10068,8 +10069,21 @@ int main(void) {
 									{
 										if(pH_H2_Samp_T1[Mix_Chosen_pH] > 3)
 										{
-											DEBUG_PRINT(UARTprintf("Step difference between the first and second mix still less than 25 steps, adding 25 steps to original mix\n", (int) (Volume_Temp * Pump_Ratio * 1000 / PumpVolRev), (int) (Volume_Temp * 1000));)
-											PumpVol_T1[1] = PumpVol_T1[0] + (PumpVolRev * .025/Pump_Ratio);
+//											DEBUG_PRINT(UARTprintf("Step difference between the first and second mix still less than 25 steps, adding 25 steps to original mix\n");)
+//											PumpVol_T1[1] = PumpVol_T1[0] + (PumpVolRev * .025/Pump_Ratio);
+
+											DEBUG_PRINT(UARTprintf("Step difference between the first and second mix still less than 25 steps, calculating to shift pH 0.3\n");)
+											Volume_Temp = (((float) (PumpVol_T1[0] - Volume_T1_dead) * (Sols->HCl_N - pow(10, -pH_H2_Samp_T1[Mix_Chosen_pH])) + Volume_Sample * (pow(10, -(pH_H2_Samp_T1[Mix_Chosen_pH] - .3)) - pow(10, -pH_H2_Samp_T1[Mix_Chosen_pH]))) / (Sols->HCl_N - pow(10, -(pH_H2_Samp_T1[Mix_Chosen_pH] - .3)))) + Volume_T1_dead;
+											if((PumpVol_T1[0] - Volume_Temp) < PumpVolRev * .025/Pump_Ratio)
+											{
+												DEBUG_PRINT(UARTprintf("Step difference calculated is less than 25 steps, setting to 25 steps plus original mix\n");)
+												PumpVol_T1[1] = PumpVol_T1[0] + (PumpVolRev * .025/Pump_Ratio);
+											}
+											else
+											{
+												DEBUG_PRINT(UARTprintf("Pump volume calculated to be %d nL or %d steps\n", (int) (Volume_Temp * 1000), (int) (Volume_Temp * Pump_Ratio * 1000.0 / PumpVolRev));)
+												PumpVol_T1[1] = Volume_Temp;
+											}
 										}
 										else
 										{
