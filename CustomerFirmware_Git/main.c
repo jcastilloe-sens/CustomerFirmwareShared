@@ -10122,13 +10122,14 @@ int main(void) {
 						{
 							DEBUG_PRINT(UARTprintf("No pH sensors are in bounds, increasing T1 steps and trying again!\n");)
 
+							// Use the Henderson Haselbalch equation to estimate the amount of acid to pump to reach just past the endpoint
+							float HCl_Conc = Sols->HCl_N * ((PumpVol_T1[mixing_index] - Volume_T1_dead) / ((PumpVol_T1[mixing_index] - Volume_T1_dead) + Volume_Sample));
+							float A_Conc = (-1*(HCl_Conc * pow(10, pH_Cr_Samp_T1[T_Chosen_pH + mixing_index * 10] - 6.37) + HCl_Conc)) / ((pow(10, pH_Cr_Samp_T1[T_Chosen_pH + mixing_index * 10]- 6.37)/pow(10, pH_Cr_Samp_RS - 6.37)) - 1);
+							float Vol_Temp = ((Volume_Sample * A_Conc / Sols->HCl_N)/(1 - A_Conc / Sols->HCl_N)) + Volume_T1_dead + .050 * PumpVolRev / Pump_Ratio;	// Calculate the volume that will reach the endpoint, then add in the dead volume as well as 50 steps to go past the endpoint
+
 							// Check if this is the first mix or if we already have a valid point
 							if(mixing_index == 0)
 							{
-								float HCl_Conc = Sols->HCl_N * ((PumpVol_T1[0] - Volume_T1_dead) / ((PumpVol_T1[0] - Volume_T1_dead) + Volume_Sample));
-								float A_Conc = (-1*(HCl_Conc * pow(10, pH_Cr_Samp_T1[T_Chosen_pH] - 6.37) + HCl_Conc)) / ((pow(10, pH_Cr_Samp_T1[T_Chosen_pH]- 6.37)/pow(10, pH_Cr_Samp_RS - 6.37)) - 1);
-								float Vol_Temp = ((Volume_Sample * A_Conc / Sols->HCl_N)/(1 - A_Conc / Sols->HCl_N)) + Volume_T1_dead + .050 * PumpVolRev / Pump_Ratio;	// Calculate the volume that will reach the endpoint, then add in the dead volume as well as 50 steps to go past the endpoint
-
 								if(PumpVol_T1[0] >= .500 * PumpVolRev / Pump_Ratio)
 								{
 									DEBUG_PRINT(UARTprintf("Pumped max and didn't reach endpoint, calculating volume for endpoint\n");)
@@ -10155,18 +10156,35 @@ int main(void) {
 							}
 							else	// This is second mix, split the difference
 							{
-								PumpVol_T1[1] = (PumpVol_T1[0] + PumpVol_T1[1]) / 2;
-
 								if(PumpVol_T1[0] >= .500 * PumpVolRev / Pump_Ratio)
 								{
-									DEBUG_PRINT(UARTprintf("First pump was max and got the correct range, second mix didn't reach, calculate only off first mix\n");)
+									// If we pumped max on the first mix but didn't get in on the second mix check if there is room for mixing in between
+									// Originally put in place because we saw that for high alk samples it couldn't get a second mix in bounds
+									// 3/11/2024: Saw softened samples mix max on first mix, then cut back to min on second and not reach, then calculate based on first mix only
+									if(Vol_Temp > PumpVol_T1[1] && Vol_Temp < (PumpVol_T1[0] - 50))
+									{
+										PumpVol_T1[1] = Vol_Temp;
+									}
+									else
+									{
+										// First mix was in range, but second wasn't. Check if there is room between the two mixes to
+										DEBUG_PRINT(UARTprintf("First pump was max and got the correct range, second mix didn't reach, calculate only off first mix\n");)
 
-									for(i = 0; i < ISEs.pH_H2.size; i++)
-										Volume_T1_Endpoint[i + ISEs.pH_H2.index] = ((float) (PumpVol_T1[0] - Volume_T1_dead) * (Sols->HCl_N - pow(10, -pH_H2_Samp_T1[i])) + Volume_Sample * (pow(10, -4.5) - pow(10, -pH_H2_Samp_T1[i]))) / (Sols->HCl_N - pow(10, -4.5));
+										for(i = 0; i < ISEs.pH_H2.size; i++)
+											Volume_T1_Endpoint[i + ISEs.pH_H2.index] = ((float) (PumpVol_T1[0] - Volume_T1_dead) * (Sols->HCl_N - pow(10, -pH_H2_Samp_T1[i])) + Volume_Sample * (pow(10, -4.5) - pow(10, -pH_H2_Samp_T1[i]))) / (Sols->HCl_N - pow(10, -4.5));
 
-									for(i = 0; i < ISEs.pH_Cr.size; i++)
-										Volume_T1_Endpoint[i + ISEs.pH_Cr.index] = ((float) (PumpVol_T1[0] - Volume_T1_dead) * (Sols->HCl_N - pow(10, -pH_Cr_Samp_T1[i])) + Volume_Sample * (pow(10, -4.5) - pow(10, -pH_Cr_Samp_T1[i]))) / (Sols->HCl_N - pow(10, -4.5));
+										for(i = 0; i < ISEs.pH_Cr.size; i++)
+											Volume_T1_Endpoint[i + ISEs.pH_Cr.index] = ((float) (PumpVol_T1[0] - Volume_T1_dead) * (Sols->HCl_N - pow(10, -pH_Cr_Samp_T1[i])) + Volume_Sample * (pow(10, -4.5) - pow(10, -pH_Cr_Samp_T1[i]))) / (Sols->HCl_N - pow(10, -4.5));
+									}
 								}
+								else
+								{
+									if(Vol_Temp > PumpVol_T1[1] && Vol_Temp < (PumpVol_T1[0] - 50))
+										PumpVol_T1[1] = Vol_Temp;
+									else
+										PumpVol_T1[1] = (PumpVol_T1[0] + PumpVol_T1[1]) / 2;
+								}
+
 							}
 						}
 
