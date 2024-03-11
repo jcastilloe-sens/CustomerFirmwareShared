@@ -7641,8 +7641,8 @@ void MemoryDump(uint8_t Print_as_mg_hardness, uint8_t Die_RevD)
 		UARTprintf("\t=%d", *((uint32_t *) MemoryRead(Test_page, OFFSET_TEST_USER_NAME, 4)));
 		UARTprintf("\t=%d", *((uint32_t *) MemoryRead(Test_page, OFFSET_TEST_LOCATION, 4)));
 
-		UARTprintf("\t%d/1000", (int) (Build_float(MemoryRead(Test_page, OFFSET_NH4_T1_MIX_PH, 4)) * 1000));
-		UARTprintf("\t%d/1000", (int) (Build_float(MemoryRead(Test_page, OFFSET_NH4_T1_MIX_VOL, 4)) * 1000));
+		UARTprintf("\t=%d/1000", (int) (Build_float(MemoryRead(Test_page, OFFSET_NH4_T1_MIX_PH, 4)) * 1000));
+		UARTprintf("\t=%d/1000", (int) (Build_float(MemoryRead(Test_page, OFFSET_NH4_T1_MIX_VOL, 4)) * 1000));
 
 		UARTprintf("\n");
 

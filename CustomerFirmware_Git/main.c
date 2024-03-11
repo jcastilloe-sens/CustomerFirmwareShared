@@ -345,7 +345,7 @@
 //			2/21/2024: Use different conductivity factory cal slopes if running a 1 kHz board or 5 kHz board
 //					Added support for different disinfection configurations
 //		V01.03.22: 2/28/2024: Adding ability to specify QC points to run from UART that will red light/green light them automatically
-//			3/3/2024: Adjusting H2 readings in alk mix based on the Cr reading
+//			3/3/2024: Adjusting H2 readings in alk mix based on the Cr reading, only if H2 reading is higher pH than Cr, as the likely cause is due to single point offset issues
 //*****************************************************************************
 #include <stdio.h>
 #include <stdint.h>
@@ -5431,12 +5431,16 @@ int main(void) {
 									update_Status(STATUS_CALIBRATION, OPERATION_CAL_POSTCHECK);
 
 									uint8_t Storage_Port;
-									if(ISEs.Config == PH_CL_CART && Sols->Cond_EEP_Cal_2 > 900)	// pH only cartridge with pH 9 clean in place of Cal 2
+#ifdef STORE_HIGH_CONC_CAL
+									DEBUG_PRINT(UARTprintf("Pumping Cal 5 as Postrinse\n");)
+									Storage_Port = V_CAL_2;
+#else
+									/*if(ISEs.Config == PH_CL_CART && Sols->Cond_EEP_Cal_2 > 900)	// pH only cartridge with pH 9 clean in place of Cal 2
 									{
 										DEBUG_PRINT(UARTprintf("Pumping Cal 2\n");)
 											Storage_Port = V_CAL_2;
 									}
-									else if((STORE_IN_CLEAN == 0 || (ISEs.Config == PH_CL_CART && STORE_PH6_CLEAN == 0)) && Sols->pH_EEP_Clean < 8.5)
+									else */if((STORE_IN_CLEAN == 0 || (ISEs.Config == PH_CL_CART && STORE_PH6_CLEAN == 0)) && Sols->pH_EEP_Clean < 8.5)
 									{
 										DEBUG_PRINT(UARTprintf("Pumping Postrinse\n");)
 											Storage_Port = V_RINSE;
@@ -5446,6 +5450,7 @@ int main(void) {
 										DEBUG_PRINT(UARTprintf("Pumping Clean as Postrinse\n");)
 											Storage_Port = V_CLEAN;
 									}
+#endif
 
 
 									RunValveToPossition_Bidirectional(V_AIR, VALVE_STEPS_PER_POSITION);
@@ -5684,12 +5689,17 @@ int main(void) {
 			// Prime and reset buffers and titrants
 			//
 			uint8_t Storage_Port;
+#ifdef STORE_HIGH_CONC_CAL
+			DEBUG_PRINT(UARTprintf("Pumping Cal 5 as Postrinse\n");)
+			Storage_Port = V_CAL_2;
+#else
 			/*if(ISEs.Config == PH_CL_CART && Sols->Cond_EEP_Cal_2 > 900)	// pH only cartridge with pH 9 clean in place of Cal 2
 				Storage_Port = V_CAL_2;
 			else */if((STORE_IN_CLEAN == 0 || (ISEs.Config == PH_CL_CART && STORE_PH6_CLEAN == 0)) && Sols->pH_EEP_Clean < 8.5)
 				Storage_Port = V_RINSE;
 			else
 				Storage_Port = V_CLEAN;
+#endif
 
 			PrintTime();
 			//#ifdef TESTING_MODE
@@ -10637,12 +10647,12 @@ int main(void) {
 
 					if(Volume_T1_End < .050 * PumpVolRev / Pump_Ratio)
 					{
-						DEBUG_PRINT(UARTprintf("Settings steps to 50, steps T1 set to:\t%d\n", (int) Volume_T1_End * 1000.0 * Pump_Ratio / PumpVolRev);)
+						DEBUG_PRINT(UARTprintf("Settings steps to 50, steps T1 set to:\t%d\n", (int) (Volume_T1_End * 1000.0 * Pump_Ratio / PumpVolRev));)
 						Volume_T1_End = .050 * PumpVolRev / Pump_Ratio;
 					}
 					else if(Volume_T1_End > .50 * PumpVolRev / Pump_Ratio)
 					{
-						DEBUG_PRINT(UARTprintf("Settings steps to 500, steps T1 set to: %d\n", (int) Volume_T1_End * 1000.0 * Pump_Ratio / PumpVolRev);)
+						DEBUG_PRINT(UARTprintf("Settings steps to 500, steps T1 set to: %d\n", (int) (Volume_T1_End * 1000.0 * Pump_Ratio / PumpVolRev));)
 						Volume_T1_End = .50 * PumpVolRev / Pump_Ratio;
 					}
 					else
@@ -10833,6 +10843,7 @@ int main(void) {
 					}
 
 					DEBUG_PRINT(UARTprintf("pH Cr:\t=%d/1000\t=%d/1000\n", (int) (pH_Samp_T1[ISEs.pH_Cr.index] * 1000), (int) (pH_Samp_T1[ISEs.pH_Cr.index + 1] * 1000));)
+					DEBUG_PRINT(UARTprintf("Chose Cr %d with a pH of %d/1000\n", T_Chosen_pH_T1, (int) (pH_Samp_T1[T_Chosen_pH_T1 + ISEs.pH_Cr.index] * 1000));)
 					DEBUG_PRINT(UARTprintf("NH4 of mixed T1:\t=%d/1000\t=%d/1000\n\n", (int) (NH4_NH3_N_Free[0] * 1000), (int) (NH4_NH3_N_Free[1] * 1000));)
 
 #ifndef UNIVERSAL_PICKING_FUNCTION
@@ -10857,7 +10868,7 @@ int main(void) {
 					for(i = 0; i < 10; i++)
 						MemoryWrite(Test_page, OFFSET_RAW_ISE_1_SAMP + (i * 4), 4, (uint8_t *) &ISE_E_Samp[i]);
 
-					MemoryWrite(Test_page, OFFSET_NH4_T1_MIX_PH, 4, (uint8_t *) &pH_Samp_T1[T_Chosen_pH_T1]);
+					MemoryWrite(Test_page, OFFSET_NH4_T1_MIX_PH, 4, (uint8_t *) &pH_Samp_T1[T_Chosen_pH_T1 + ISEs.pH_Cr.index]);
 					MemoryWrite(Test_page, OFFSET_NH4_T1_MIX_VOL, 4, (uint8_t *) &Volume_T1_End);
 
 					update_Test(Test_Number);
@@ -13189,12 +13200,17 @@ int main(void) {
 			}
 
 			uint8_t Storage_Port;
+#ifdef STORE_HIGH_CONC_CAL
+			DEBUG_PRINT(UARTprintf("Pumping Cal 5 as Postrinse\n");)
+			Storage_Port = V_CAL_2;
+#else
 			/*if(ISEs.Config == PH_CL_CART && Sols->Cond_EEP_Cal_2 > 900)	// pH only cartridge with pH 9 clean in place of Cal 2
 				Storage_Port = V_CAL_2;
 			else */if((STORE_IN_CLEAN == 0 || (ISEs.Config == PH_CL_CART && STORE_PH6_CLEAN == 0)) && Sols->pH_EEP_Clean < 8.5)
 				Storage_Port = V_RINSE;
 			else
 				Storage_Port = V_CLEAN;
+#endif
 
 			if(PURGE_SAMPLE)
 			{
