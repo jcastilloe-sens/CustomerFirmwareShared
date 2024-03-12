@@ -7416,7 +7416,7 @@ void MemoryDump(uint8_t Print_as_mg_hardness, uint8_t Die_RevD)
 	UARTprintf("\tB2 Mix Therm Temp");
 	UARTprintf("\tUser ID");
 	UARTprintf("\tLocation ID");
-	UARTprintf("\tNH4 T1 Mix pH\tNH4 T1 Mix Vol");
+	UARTprintf("\tNH4 T1 Mix pH\tNH4 T1 Mix Vol\tNH4 T1 Mix Cond");
 	UARTprintf("\n");
 
 	for(k = 1; k < (Test_Number + 1); k++)
@@ -7643,6 +7643,7 @@ void MemoryDump(uint8_t Print_as_mg_hardness, uint8_t Die_RevD)
 
 		UARTprintf("\t=%d/1000", (int) (Build_float(MemoryRead(Test_page, OFFSET_NH4_T1_MIX_PH, 4)) * 1000));
 		UARTprintf("\t=%d/1000", (int) (Build_float(MemoryRead(Test_page, OFFSET_NH4_T1_MIX_VOL, 4)) * 1000));
+		UARTprintf("\t=%d/1000", (int) (Build_float(MemoryRead(Test_page, OFFSET_NH4_T1_MIX_COND, 4)) * 1000));
 
 		UARTprintf("\n");
 

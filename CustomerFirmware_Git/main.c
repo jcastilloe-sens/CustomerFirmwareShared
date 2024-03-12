@@ -347,6 +347,7 @@
 //		V01.03.22: 2/28/2024: Adding ability to specify QC points to run from UART that will red light/green light them automatically
 //			3/3/2024: Adjusting H2 readings in alk mix based on the Cr reading, only if H2 reading is higher pH than Cr, as the likely cause is due to single point offset issues
 //		V01.03.23: 3/11/2024: Alk when adding acid because first mix is close to endpoint calculate volume to shift pH 0.3, if first mix is in bounds but second isn't calculate to get second mix in bounds rather than just give up
+//		V01.03.24: 3/12/2024: Save and print NH4 T1 mix conductivity
 //*****************************************************************************
 #include <stdio.h>
 #include <stdint.h>
@@ -10902,6 +10903,7 @@ int main(void) {
 
 					MemoryWrite(Test_page, OFFSET_NH4_T1_MIX_PH, 4, (uint8_t *) &pH_Samp_T1[T_Chosen_pH_T1 + ISEs.pH_Cr.index]);
 					MemoryWrite(Test_page, OFFSET_NH4_T1_MIX_VOL, 4, (uint8_t *) &Volume_T1_End);
+					MemoryWrite(Test_page, OFFSET_NH4_T1_MIX_COND, 4, (uint8_t *) &Conductivity_T1);
 
 					update_Test(Test_Number);
 				}

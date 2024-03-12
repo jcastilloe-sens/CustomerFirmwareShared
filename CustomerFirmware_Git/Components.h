@@ -732,6 +732,7 @@ extern uint8_t gui8IO_Ext2_Reg3;
 #define OFFSET_B2_PRIME_COND	(216 + 256)
 #define OFFSET_NH4_T1_MIX_PH	(220 + 256)
 #define OFFSET_NH4_T1_MIX_VOL	(224 + 256)
+#define OFFSET_NH4_T1_MIX_COND	(228 + 256)
 
 #endif
 
