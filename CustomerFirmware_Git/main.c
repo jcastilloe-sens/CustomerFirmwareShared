@@ -348,6 +348,7 @@
 //			3/3/2024: Adjusting H2 readings in alk mix based on the Cr reading, only if H2 reading is higher pH than Cr, as the likely cause is due to single point offset issues
 //		V01.03.23: 3/11/2024: Alk when adding acid because first mix is close to endpoint calculate volume to shift pH 0.3, if first mix is in bounds but second isn't calculate to get second mix in bounds rather than just give up
 //		V01.03.24: 3/12/2024: Save and print NH4 T1 mix conductivity
+//		V01.03.25: 3/13/2024: H2 pH readings in alk mix correct based on Cal 6 - Rinse mV from daily cal. Added timing report
 //*****************************************************************************
 #include <stdio.h>
 #include <stdint.h>
@@ -10226,7 +10227,7 @@ int main(void) {
 									// If we pumped max on the first mix but didn't get in on the second mix check if there is room for mixing in between
 									// Originally put in place because we saw that for high alk samples it couldn't get a second mix in bounds
 									// 3/11/2024: Saw softened samples mix max on first mix, then cut back to min on second and not reach, then calculate based on first mix only
-									if(Vol_Temp > PumpVol_T1[1] && Vol_Temp < (PumpVol_T1[0] - 50))
+									if(Vol_Temp > PumpVol_T1[1] && Vol_Temp < (PumpVol_T1[0] - .050 * PumpVolRev / Pump_Ratio))
 									{
 										PumpVol_T1[1] = Vol_Temp;
 									}
