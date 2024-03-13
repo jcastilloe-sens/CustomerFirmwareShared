@@ -7468,6 +7468,16 @@ int main(void) {
 			if(g_state != STATE_MEASUREMENT)
 				break;
 
+#ifdef TESTING_MODE
+			TimerIntDisable(WTIMER0_BASE, TIMER_TIMA_TIMEOUT);
+			IntDisable(INT_WTIMER0A);
+			TimerLoadSet64(WTIMER0_BASE, 0xFFFFFFFFFFFFFFFF); // Set timer for 5 minutes, if timer expires hibernate device
+			TimerConfigure(WTIMER0_BASE, TIMER_CFG_PERIODIC_UP);
+			TimerEnable(WTIMER0_BASE, TIMER_BOTH);
+
+			uint64_t start_clock = TimerValueGet64(WTIMER0_BASE);
+#endif
+
 			update_Status(STATUS_TEST, OPERATION_TEST_RINSE);
 
 			//			// TODO: Set pump variables for test
@@ -7809,6 +7819,8 @@ int main(void) {
 			}
 #endif
 
+			DEBUG_PRINT(UARTprintf("\nTest Number %d\n", Test_Number);)
+
 			float T_Therm;
 			if(1)	// Isolating the thermistor variables T_Therm_S, T_Therm_F, and Therm_Correction becasue this is the only place they are needed
 			{
@@ -7854,6 +7866,11 @@ int main(void) {
 				userDelay(valve_delay, 1);
 			}
 
+#ifdef TESTING_MODE
+			uint64_t prime_clock = TimerValueGet64(WTIMER0_BASE);
+			DEBUG_PRINT(UARTprintf("Time to prime: %d\n", (uint32_t) ((prime_clock - start_clock)/SysCtlClockGet()));)
+			DEBUG_PRINT(UARTprintf("Total time elapsed: %d s, or %d m %d s\n", (uint32_t) ((prime_clock - start_clock)/SysCtlClockGet()), (uint32_t) ((prime_clock - start_clock)/SysCtlClockGet())/60,(uint32_t) ((prime_clock - start_clock)/SysCtlClockGet())%60);)
+#endif
 //			if(STRETCH_SENSOR && (gui32Error & ABORT_ERRORS) == 0)
 //			{
 //				if(CheckSensorSat())
@@ -8035,6 +8052,12 @@ int main(void) {
 				}
 			}
 #endif	// STRAIGHT_TO_CL
+
+#ifdef TESTING_MODE
+			uint64_t rinse_clock = TimerValueGet64(WTIMER0_BASE);
+			DEBUG_PRINT(UARTprintf("Time to rinse: %d\n", (uint32_t) ((rinse_clock - prime_clock)/SysCtlClockGet()));)
+			DEBUG_PRINT(UARTprintf("Total time elapsed: %d s, or %d m %d s\n", (uint32_t) ((rinse_clock - start_clock)/SysCtlClockGet()), (uint32_t) ((rinse_clock - start_clock)/SysCtlClockGet())/60,(uint32_t) ((rinse_clock - start_clock)/SysCtlClockGet())%60);)
+#endif
 
 			//
 			// Flow chart measurement green section, sample
@@ -9235,6 +9258,12 @@ int main(void) {
 #endif	// STRAIGHT_TO_CL
 			}
 
+#ifdef TESTING_MODE
+			uint64_t samp_clock = TimerValueGet64(WTIMER0_BASE);
+			DEBUG_PRINT(UARTprintf("Time to samp: %d\n", (uint32_t) ((samp_clock - rinse_clock)/SysCtlClockGet()));)
+			DEBUG_PRINT(UARTprintf("Total time elapsed: %d s, or %d m %d s\n", (uint32_t) ((samp_clock - start_clock)/SysCtlClockGet()), (uint32_t) ((samp_clock - start_clock)/SysCtlClockGet())/60,(uint32_t) ((samp_clock - start_clock)/SysCtlClockGet())%60);)
+#endif
+
 			//
 			// Run Alkalinity after sample but before chlorine
 			//
@@ -9262,12 +9291,26 @@ int main(void) {
 					float *pH_Cr_Samp_T1 = &pH_Samp_T1[ISEs.pH_Cr.index];
 					float Volume_T1_Endpoint[10] = {0,0,0,0,0,0,0,0,0,0};	// Sensor 1, Sensor 2, Sensor 3
 
-
 					//					float NH4_E_Samp_T1[3] = {0,0,0};
 					float Alk_Slope[10] = {0,0,0,0,0,0,0,0,0,0};
 					float T_Samp_T1[2];
 					uint8_t method[10] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};	// {Sensor 1, Sensor 2, Sensor 3}
 					uint8_t sensor_points[10] = {0,0,0,0,0,0,0,0,0,0};	// Counter for each sensor to determine which mix each sensor is on
+
+					ConnectMemory(1);
+
+					// Calculate the H2 mV offset of Rinse from Cal 6 - Cal 5 line
+					float pH_H2_E_Rinse_Adj[2] = {pH_H2_E_Rinse[0], pH_H2_E_Rinse[1]};
+					for(i = 0; i < 2; i++)
+					{
+						float H2_mV_Rinse = Build_float(MemoryRead(Find_Cal_page(Last_cal_passed[i + ISEs.pH_H2.index]), OFFSET_CR_ISE_1_RINSE + ((i + ISEs.pH_H2.index) * 4), 4));
+						float H2_pH_Cal_T = Calc_pH_TCor(Sols->pH_EEP_Rinse, T_EEP_Cal, 25, 0, Sols->K_T_pH_Rinse);
+						float H2_Cal_Int = Build_float(MemoryRead(Find_Cal_page(Last_cal_passed[i + ISEs.pH_H2.index]), OFFSET_ISE_1_INT + ((i + ISEs.pH_H2.index) * 4), 4));
+						float H2_Rinse_offset = H2_mV_Rinse - (pH_H2_EEP_Slope[i] * H2_pH_Cal_T + H2_Cal_Int);
+						pH_H2_E_Rinse_Adj[i] -= H2_Rinse_offset;
+
+						DEBUG_PRINT(UARTprintf("H2 %d rinse mV offset: %d / 1000\n", i + 1, (int) (H2_Rinse_offset * 1000));)
+					}
 
 					//					float Steps_Sample[2] = {Steps_PreT1 + Steps_PostT1, Steps_PreT1 + Steps_PostT1};	// First mixing, Second mixing
 					//					float Steps_Samp_Endpoint[3];	// Sensor 1, Sensor 2, Sensor 3
@@ -9336,9 +9379,6 @@ int main(void) {
 						PumpVol_T1[0] = PumpVolRev * .050/Pump_Ratio;
 
 					PumpVol_T1[1] = PumpVol_T1[0] + PumpVolRev * .050/Pump_Ratio;	// Add 50 steps as initial guess for second mix, this gets recalculated later if pH is below 4.5
-
-
-					float pH_H2_E_Rinse_Adj[2] = {pH_H2_E_Rinse[0], pH_H2_E_Rinse[1]};
 
 #ifdef PRINT_UART
 					DEBUG_PRINT(UARTprintf("Subtracting %d nL of T1 from calculations, this is equivalent to 30 steps on 2020 pump heads\n", (int) (Volume_T1_dead * 1000));)
@@ -9748,21 +9788,31 @@ int main(void) {
 
 						uint8_t Mix_Chosen_pH_Cr = Choose_Sensor(Cal_Number, pH_Cr_Samp_T1, pH_Cr_E_Rinse, T_Rinse, ISEs.pH_Cr, Sols);
 
+						// Adjust based on daily calibration difference between Rinse and Cal 6
+						// Adjust based on Cr sensor
 						for(i = 0; i < ISEs.pH_H2.size; i++)
 						{
 							float pH_H2_Slope_Samp_T1T = pH_H2_EEP_Slope[i] * (T_Samp_T1[mixing_index] + 273) / (T_EEP_Cal + 273);	// Temperature corrected slope
-							if(pH_Cr_Samp_T1[Mix_Chosen_pH_Cr] < pH_H2_Samp_T1[i] && mixing_index == 0)
-							{
-								pH_H2_Samp_T1[i] = pH_Cr_Samp_T1[Mix_Chosen_pH_Cr];
-								pH_H2_E_Rinse_Adj[i] = -((pH_H2_Samp_T1[i] - pH_TCor_Rinse) * pH_H2_Slope_Samp_T1T - pH_H2_E_Samp_T1[i]);
-								DEBUG_PRINT(UARTprintf("Adjusting H2 %d to align with Cr %d: %d\n", i + 1, Mix_Chosen_pH_Cr + 1, (int) (pH_Cr_Samp_T1[Mix_Chosen_pH_Cr] * 1000));)
-							}
-							else
-							{
-								float pH_H2_Slope_Samp_T1T = pH_H2_EEP_Slope[i] * (T_Samp_T1[mixing_index] + 273) / (T_EEP_Cal + 273);	// Temperature corrected slope
-								pH_H2_Samp_T1[i + (mixing_index * 10)] = pH_TCor_Rinse + ((pH_H2_E_Samp_T1[i] - pH_H2_E_Rinse_Adj[i]) / pH_H2_Slope_Samp_T1T); // pH of sample
-							}
+							pH_H2_Samp_T1[i + (mixing_index * 10)] = pH_TCor_Rinse + ((pH_H2_E_Samp_T1[i] - pH_H2_E_Rinse_Adj[i]) / pH_H2_Slope_Samp_T1T); // pH of sample
 						}
+
+
+//						// Adjust based on Cr sensor
+//						for(i = 0; i < ISEs.pH_H2.size; i++)
+//						{
+//							float pH_H2_Slope_Samp_T1T = pH_H2_EEP_Slope[i] * (T_Samp_T1[mixing_index] + 273) / (T_EEP_Cal + 273);	// Temperature corrected slope
+//							if(pH_Cr_Samp_T1[Mix_Chosen_pH_Cr] < pH_H2_Samp_T1[i] && mixing_index == 0)
+//							{
+//								pH_H2_Samp_T1[i] = pH_Cr_Samp_T1[Mix_Chosen_pH_Cr];
+//								pH_H2_E_Rinse_Adj[i] = -((pH_H2_Samp_T1[i] - pH_TCor_Rinse) * pH_H2_Slope_Samp_T1T - pH_H2_E_Samp_T1[i]);
+//								DEBUG_PRINT(UARTprintf("Adjusting H2 %d to align with Cr %d: %d\n", i + 1, Mix_Chosen_pH_Cr + 1, (int) (pH_Cr_Samp_T1[Mix_Chosen_pH_Cr] * 1000));)
+//							}
+//							else
+//							{
+//								float pH_H2_Slope_Samp_T1T = pH_H2_EEP_Slope[i] * (T_Samp_T1[mixing_index] + 273) / (T_EEP_Cal + 273);	// Temperature corrected slope
+//								pH_H2_Samp_T1[i + (mixing_index * 10)] = pH_TCor_Rinse + ((pH_H2_E_Samp_T1[i] - pH_H2_E_Rinse_Adj[i]) / pH_H2_Slope_Samp_T1T); // pH of sample
+//							}
+//						}
 
 
 #ifdef PRINT_UART
@@ -10631,6 +10681,12 @@ int main(void) {
 					//					userDelay(valve_delay, 1);
 				}	// End of if(MEASURE_ALKALINITY)
 
+#ifdef TESTING_MODE
+			uint64_t alk_clock = TimerValueGet64(WTIMER0_BASE);
+			DEBUG_PRINT(UARTprintf("Time to alk: %d\n", (uint32_t) ((alk_clock - samp_clock) / SysCtlClockGet()));)
+			DEBUG_PRINT(UARTprintf("Total time elapsed: %d s, or %d m %d s\n", (uint32_t) ((alk_clock - start_clock)/SysCtlClockGet()), (uint32_t) ((alk_clock - start_clock)/SysCtlClockGet())/60,(uint32_t) ((alk_clock - start_clock)/SysCtlClockGet())%60);)
+#endif
+
 			// Check if we need to mix T1 for NH4 measurement
 			if((gui32Error & ABORT_ERRORS) == 0)
 			{
@@ -10909,6 +10965,12 @@ int main(void) {
 				}
 			}
 #endif	// STRAIGHT_TO_CL
+
+#ifdef TESTING_MODE
+			uint64_t NH4_mix_clock = TimerValueGet64(WTIMER0_BASE);
+			DEBUG_PRINT(UARTprintf("Time to NH4 mix: %d\n", (uint32_t) ((NH4_mix_clock - alk_clock) / SysCtlClockGet()));)
+			DEBUG_PRINT(UARTprintf("Total time elapsed: %d s, or %d m %d s\n", (uint32_t) ((NH4_mix_clock - start_clock)/SysCtlClockGet()), (uint32_t) ((NH4_mix_clock - start_clock)/SysCtlClockGet())/60,(uint32_t) ((NH4_mix_clock - start_clock)/SysCtlClockGet())%60);)
+#endif
 
 			//
 			// Clean amperometrics in rinse
@@ -11600,6 +11662,12 @@ int main(void) {
 					}
 				}
 
+#ifdef TESTING_MODE
+			uint64_t clean_clock = TimerValueGet64(WTIMER0_BASE);
+			DEBUG_PRINT(UARTprintf("Time to clean: %d\n", (uint32_t) ((clean_clock - NH4_mix_clock) / SysCtlClockGet()));)
+			DEBUG_PRINT(UARTprintf("Total time elapsed: %d s, or %d m %d s\n", (uint32_t) ((clean_clock - start_clock)/SysCtlClockGet()), (uint32_t) ((clean_clock - start_clock)/SysCtlClockGet())/60,(uint32_t) ((clean_clock - start_clock)/SysCtlClockGet())%60);)
+#endif
+
 			// Create variables for Cl mixing
 			float Cl_nA_FCl = 0;
 			float Cl_nA_TCl = 0;
@@ -12160,6 +12228,11 @@ int main(void) {
 
 				}
 
+#ifdef TESTING_MODE
+			uint64_t free_clock = TimerValueGet64(WTIMER0_BASE);
+			DEBUG_PRINT(UARTprintf("Time to free: %d\n", (uint32_t) ((free_clock - clean_clock) / SysCtlClockGet()));)
+			DEBUG_PRINT(UARTprintf("Total time elapsed: %d s, or %d m %d s\n", (uint32_t) ((free_clock - start_clock)/SysCtlClockGet()), (uint32_t) ((free_clock - start_clock)/SysCtlClockGet())/60,(uint32_t) ((free_clock - start_clock)/SysCtlClockGet())%60);)
+#endif
 
 			//
 			// TCL, B2
@@ -12757,6 +12830,13 @@ int main(void) {
 					userDelay(valve_delay, 1);
 				}
 
+#ifdef TESTING_MODE
+			uint64_t total_clock = TimerValueGet64(WTIMER0_BASE);
+			DEBUG_PRINT(UARTprintf("Time to total: %d\n", (uint32_t) ((total_clock - free_clock) / SysCtlClockGet()));)
+			DEBUG_PRINT(UARTprintf("Total time elapsed: %d s, or %d m %d s\n", (uint32_t) ((total_clock - start_clock)/SysCtlClockGet()), (uint32_t) ((total_clock - start_clock)/SysCtlClockGet())/60,(uint32_t) ((total_clock - start_clock)/SysCtlClockGet())%60);)
+#endif
+
+
 #ifdef MEASURE_NITRITE
 			// Create variables for Nitrite
 			float Nitrite_Samp_nA = 0;
@@ -13305,6 +13385,12 @@ int main(void) {
 				}
 			}
 
+#ifdef TESTING_MODE
+			uint64_t flush_clock = TimerValueGet64(WTIMER0_BASE);
+			DEBUG_PRINT(UARTprintf("Time to flush: %d\n", (uint32_t) ((flush_clock - total_clock) / SysCtlClockGet()));)
+			DEBUG_PRINT(UARTprintf("Total time elapsed: %d s, or %d m %d s\n", (uint32_t) ((flush_clock - start_clock)/SysCtlClockGet()), (uint32_t) ((flush_clock - start_clock)/SysCtlClockGet())/60,(uint32_t) ((flush_clock - start_clock)/SysCtlClockGet())%60);)
+#endif
+
 			//
 			// Flow Chart teal section, post-rinse
 			//
@@ -13752,6 +13838,12 @@ int main(void) {
 			}
 
 			SleepValve();
+
+#ifdef TESTING_MODE
+			uint64_t store_clock = TimerValueGet64(WTIMER0_BASE);
+			DEBUG_PRINT(UARTprintf("Time to flush: %d\n", (uint32_t) ((store_clock - flush_clock) / SysCtlClockGet()));)
+			DEBUG_PRINT(UARTprintf("Total time elapsed: %d s, or %d m %d s\n", (uint32_t) ((store_clock - start_clock)/SysCtlClockGet()), (uint32_t) ((store_clock - start_clock)/SysCtlClockGet())/60,(uint32_t) ((store_clock - start_clock)/SysCtlClockGet())%60);)
+#endif
 
 			if((gui32Error & ABORT_ERRORS) == 0)
 			{
@@ -14258,6 +14350,16 @@ int main(void) {
 			}
 #endif
 
+#ifdef TESTING_MODE
+			uint64_t valve_clock = TimerValueGet64(WTIMER0_BASE);
+			DEBUG_PRINT(UARTprintf("Time to valve: %d\n", (uint32_t) ((valve_clock - store_clock) / SysCtlClockGet()));)
+			DEBUG_PRINT(UARTprintf("Total time elapsed: %d s, or %d m %d s\n", (uint32_t) ((valve_clock - start_clock)/SysCtlClockGet()), (uint32_t) ((valve_clock - start_clock)/SysCtlClockGet())/60,(uint32_t) ((valve_clock - start_clock)/SysCtlClockGet())%60);)
+
+			TimerDisable(WTIMER0_BASE, TIMER_A);
+			TimerConfigure(WTIMER0_BASE, TIMER_CFG_ONE_SHOT);
+			TimerIntEnable(WTIMER0_BASE, TIMER_TIMA_TIMEOUT);
+#endif
+
 			counter = 0;
 			while(GPIOPinRead(IO_BUTTON_BASE, IO_BUTTON_PIN) == IO_BUTTON_PIN && counter < TIMEOUT)
 			{
@@ -14291,6 +14393,7 @@ int main(void) {
 				update_Status(STATUS_TEST, OPERATION_TEST_FAILED);
 				DEBUG_PRINT(UARTprintf("Test failed! Error Code: 0x%x\n", gui32Error);)
 			}
+
 			//			update_Status(STATUS_TEST, OPERATION_TEST_COMPLETE);
 			while(GPIOPinRead(IO_BUTTON_BASE, IO_BUTTON_PIN) == 0x00);
 
