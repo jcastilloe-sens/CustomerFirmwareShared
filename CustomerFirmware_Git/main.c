@@ -344,6 +344,7 @@
 //		V01.03.21:	2/19/2024: Added predefine for calibrating H2 in Cal 6 + B2 mix
 //			2/21/2024: Use different conductivity factory cal slopes if running a 1 kHz board or 5 kHz board
 //					Added support for different disinfection configurations
+//			3/18/2024: Changed NH4 T1 mix to go if pH > 8, guess if no alkalinity is based on Ca hardness as a proxy for alkalinity, for disinfection cartridge pump 7.5 uL
 //*****************************************************************************
 #include <stdio.h>
 #include <stdint.h>
@@ -10443,7 +10444,7 @@ int main(void) {
 						//						Steps_T1_Endpoint[T_Chosen_Alk] *= .5;
 
 						Volume_T1_Endpoint[T_Chosen_Alk] += Volume_T1_dead;	// Add back in the dead steps because this variable is only used for pumping from here on
-						if(Volume_T1_Endpoint[T_Chosen_Alk] < .050 * 1000 * Pump_Ratio / PumpVolRev)
+						if([T_Chosen_Alk] < .050 * 1000 * Pump_Ratio / PumpVolRev)
 						{
 							DEBUG_PRINT(UARTprintf("Setting endpoint steps to 50, steps, volume T1 Endpoint calculated to:\t%d\t%d\n", (int) (Volume_T1_Endpoint[T_Chosen_Alk] * 1000 * Pump_Ratio / PumpVolRev), (int) (Volume_T1_Endpoint[T_Chosen_Alk] * 1000));)
 							Volume_T1_Endpoint[T_Chosen_Alk] = .050 * 1000 * Pump_Ratio / PumpVolRev;
@@ -10641,7 +10642,7 @@ int main(void) {
 			// Check if we need to mix T1 for NH4 measurement
 			if((gui32Error & ABORT_ERRORS) == 0)
 			{
-				if(MEASURE_NH4_T1 && pH_Cr_Samp_RS > 8.5 && ISEs.NH4.size > 0)
+				if(MEASURE_NH4_T1 && pH_Cr_Samp_RS > 8 && ISEs.NH4.size > 0)
 				{
 					float ISE_E_Samp_T1[10] = {0,0,0,0,0,0,0,0,0,0};
 					//					float *pH_H2_E_Samp_T1 = &ISE_E_Samp_T1[ISEs.pH_H2.index];
@@ -10650,7 +10651,19 @@ int main(void) {
 
 					if(Volume_T1_End == 0)	// If the endpoint wasn't found or alkalinity wasn't tested just guess... TODO: Base this off hardness
 					{
-						Volume_T1_End = .075 * PumpVolRev / Pump_Ratio;
+						if(ISEs.Config >= DISINFECTION_CART && ISEs.Config <= DISINFECTION_CART_2CR_6NH4_2CR)	// This is a disinfection cartridge
+						{
+							// Trying HEPES buffer on T1 port, Simon wants 7.5 uL, doubled because that is cut in half
+							Volume_T1_End = 15;
+						}
+						else	// Not a disinfection cartridge (full cartridge most likely)
+						{
+//							Volume_T1_End = .075 * PumpVolRev / Pump_Ratio;
+
+							// Because Ca_Hardness is almost 1-1 with alkalinity use the Ca_Hardness value to calculate the Volume T1 Endpoint
+							Volume_T1_End = (Ca_Hardness[T_Chosen_Ca] * (((Steps_PreT1/1000) * PumpVolRev) + PumpVol_PostT1)) / (50044.0 * Sols->HCl_N);
+						}
+
 					}
 
 					DEBUG_PRINT(UARTprintf("Cutting endpoint steps to 50%% to test NH4...\n");)
@@ -10687,12 +10700,12 @@ int main(void) {
 
 					if(Volume_T1_End < .050 * PumpVolRev / Pump_Ratio)
 					{
-						DEBUG_PRINT(UARTprintf("Settings steps to 50, steps T1 set to:\t%d\n", (int) Volume_T1_End * 1000.0 * Pump_Ratio / PumpVolRev);)
+						DEBUG_PRINT(UARTprintf("Settings steps to 50, steps T1 set to:\t%d\n", (int) (Volume_T1_End * 1000.0 * Pump_Ratio / PumpVolRev));)
 						Volume_T1_End = .050 * PumpVolRev / Pump_Ratio;
 					}
 					else if(Volume_T1_End > .50 * PumpVolRev / Pump_Ratio)
 					{
-						DEBUG_PRINT(UARTprintf("Settings steps to 500, steps T1 set to: %d\n", (int) Volume_T1_End * 1000.0 * Pump_Ratio / PumpVolRev);)
+						DEBUG_PRINT(UARTprintf("Settings steps to 500, steps T1 set to: %d\n", (int) (Volume_T1_End * 1000.0 * Pump_Ratio / PumpVolRev));)
 						Volume_T1_End = .50 * PumpVolRev / Pump_Ratio;
 					}
 					else
