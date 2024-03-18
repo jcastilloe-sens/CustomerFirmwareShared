@@ -349,6 +349,7 @@
 //		V01.03.23: 3/11/2024: Alk when adding acid because first mix is close to endpoint calculate volume to shift pH 0.3, if first mix is in bounds but second isn't calculate to get second mix in bounds rather than just give up
 //		V01.03.24: 3/12/2024: Save and print NH4 T1 mix conductivity
 //		V01.03.25: 3/13/2024: H2 pH readings in alk mix correct based on Cal 6 - Rinse mV from daily cal. Added timing report
+//		V01.03.26:	3/18/2024: Changed NH4 T1 mix to go if pH > 8, guess if no alkalinity is based on Ca hardness as a proxy for alkalinity, for disinfection cartridge pump 7.5 uL
 //*****************************************************************************
 #include <stdio.h>
 #include <stdint.h>
@@ -10691,7 +10692,7 @@ int main(void) {
 			// Check if we need to mix T1 for NH4 measurement
 			if((gui32Error & ABORT_ERRORS) == 0)
 			{
-				if(MEASURE_NH4_T1 && pH_Cr_Samp_RS > 8.5 && ISEs.NH4.size > 0)
+				if(MEASURE_NH4_T1 && pH_Cr_Samp_RS > 8 && ISEs.NH4.size > 0)
 				{
 					float ISE_E_Samp_T1[10] = {0,0,0,0,0,0,0,0,0,0};
 					//					float *pH_H2_E_Samp_T1 = &ISE_E_Samp_T1[ISEs.pH_H2.index];
@@ -10700,7 +10701,19 @@ int main(void) {
 
 					if(Volume_T1_End == 0)	// If the endpoint wasn't found or alkalinity wasn't tested just guess... TODO: Base this off hardness
 					{
-						Volume_T1_End = .075 * PumpVolRev / Pump_Ratio;
+						if(ISEs.Config >= DISINFECTION_CART && ISEs.Config <= DISINFECTION_CART_2CR_6NH4_2CR)	// This is a disinfection cartridge
+						{
+							// Trying HEPES buffer on T1 port, Simon wants 7.5 uL, doubled because that is cut in half
+							Volume_T1_End = 15;
+						}
+						else	// Not a disinfection cartridge (full cartridge most likely)
+						{
+//							Volume_T1_End = .075 * PumpVolRev / Pump_Ratio;
+
+							// Because Ca_Hardness is almost 1-1 with alkalinity use the Ca_Hardness value to calculate the Volume T1 Endpoint
+							Volume_T1_End = (Ca_Hardness[T_Chosen_Ca] * (((Steps_PreT1/1000) * PumpVolRev) + PumpVol_PostT1)) / (50044.0 * Sols->HCl_N);
+						}
+
 					}
 
 					DEBUG_PRINT(UARTprintf("Cutting endpoint steps to 50%% to test NH4...\n");)
