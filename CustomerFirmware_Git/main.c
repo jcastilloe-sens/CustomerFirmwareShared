@@ -350,6 +350,7 @@
 //		V01.03.24: 3/12/2024: Save and print NH4 T1 mix conductivity
 //		V01.03.25: 3/13/2024: H2 pH readings in alk mix correct based on Cal 6 - Rinse mV from daily cal. Added timing report
 //		V01.03.26:	3/18/2024: Changed NH4 T1 mix to go if pH > 8, guess if no alkalinity is based on Ca hardness as a proxy for alkalinity, for disinfection cartridge pump 7.5 uL
+//		V01.03.27: 3/20/2024: Add sample flushing step after disinfection cartridge HEPES mix
 //*****************************************************************************
 #include <stdio.h>
 #include <stdint.h>
@@ -10713,7 +10714,6 @@ int main(void) {
 							// Because Ca_Hardness is almost 1-1 with alkalinity use the Ca_Hardness value to calculate the Volume T1 Endpoint
 							Volume_T1_End = (Ca_Hardness[T_Chosen_Ca] * (((Steps_PreT1/1000) * PumpVolRev) + PumpVol_PostT1)) / (50044.0 * Sols->HCl_N);
 						}
-
 					}
 
 					DEBUG_PRINT(UARTprintf("Cutting endpoint steps to 50%% to test NH4...\n");)
@@ -10976,6 +10976,17 @@ int main(void) {
 					MemoryWrite(Test_page, OFFSET_NH4_T1_MIX_COND, 4, (uint8_t *) &Conductivity_T1);
 
 					update_Test(Test_Number);
+
+					// For disinfection cartridge flush with sample to clear our HEPES
+					if(ISEs.Config >= DISINFECTION_CART && ISEs.Config <= DISINFECTION_CART_2CR_6NH4_2CR)	// This is a disinfection cartridge
+					{
+						RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
+						PumpVolume(FW, PumpVol_sample_rinse, Speed_Fast, 1);
+						userDelay(valve_delay, 1);
+						RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);
+						PumpVolume(FW, PumpVol_air_bubble, Speed_Fast, 1);
+						userDelay(valve_delay_after_air, 1);
+					}
 				}
 			}
 #endif	// STRAIGHT_TO_CL
