@@ -5633,6 +5633,7 @@ void MemoryDump(uint8_t Print_as_mg_hardness, uint8_t Die_RevD)
 	UARTprintf("\tH2 Slope Per\tpH Slope Per\tCa Slope Per\tTH Slope Per\tNH4 Slope Per\tCond Slope Per");
 
 	UARTprintf("\tCond Rinse Mid Raw\tCond Rinse High Raw\tCond Clean Mid Raw\tCond Clean High Raw");
+	UARTprintf("\tH2 1 Cal 6+B2 mV\tH2 2 Cal 6+B2 mV");
 
 	UARTprintf("\n");
 
@@ -6108,6 +6109,9 @@ void MemoryDump(uint8_t Print_as_mg_hardness, uint8_t Die_RevD)
 		UARTprintf("\t=%d/1000", (int) (Build_float(MemoryRead(Cal_page, OFFSET_RINSE_HIGH_RAW, 4)) * 1000));
 		UARTprintf("\t=%d/1000", (int) (Build_float(MemoryRead(Cal_page, OFFSET_CLEAN_MID_RAW, 4)) * 1000));
 		UARTprintf("\t=%d/1000", (int) (Build_float(MemoryRead(Cal_page, OFFSET_CLEAN_HIGH_RAW, 4)) * 1000));
+
+		UARTprintf("\t=%d/1000", (int) (Build_float(MemoryRead(Cal_page, OFFSET_H2_1_MV_CAL6_B2, 4)) * 1000));
+		UARTprintf("\t=%d/1000", (int) (Build_float(MemoryRead(Cal_page, OFFSET_H2_2_MV_CAL6_B2, 4)) * 1000));
 
 		UARTprintf("\n");
 		userDelay(50, 0);

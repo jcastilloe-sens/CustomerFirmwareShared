@@ -351,6 +351,8 @@
 //		V01.03.25: 3/13/2024: H2 pH readings in alk mix correct based on Cal 6 - Rinse mV from daily cal. Added timing report
 //		V01.03.26:	3/18/2024: Changed NH4 T1 mix to go if pH > 8, guess if no alkalinity is based on Ca hardness as a proxy for alkalinity, for disinfection cartridge pump 7.5 uL
 //		V01.03.27: 3/20/2024: Add sample flushing step after disinfection cartridge HEPES mix
+//		V01.03.28: 3/26/2024: Going back to adjusting H2 readings based on Cr sensor, adding in Cal 6+B2 H2 calibration and saving mV to memory
+//		V01.03.29: 3/27/2024: Switching to storing on sample, changed NH4 T1 mix to match alkalinity mix
 //*****************************************************************************
 #include <stdio.h>
 #include <stdint.h>
@@ -1764,6 +1766,14 @@ int main(void) {
 
 							g_state = STATE_MEASUREMENT; // Switch to test mode
 							g_next_state = STATE_IDLE;
+
+//							// Goodbye Ondrej
+//							g_state = STATE_IDLE;
+//							SetLED(GREEN_BUTTON_BLINK, 1);
+//							PumpStepperRunTimeSpeed_AbortReady(FW, 140, 2500);
+//							PumpStepperRunTimeSpeed_AbortReady(FW, 140, 2500);
+//							SetLED(GREEN_BUTTON_BLINK, 0);
+//							break;
 						}
 					}
 				} // if button or SPI test instruction
@@ -3806,7 +3816,8 @@ int main(void) {
 							userDelay(valve_delay, 1);
 						}
 
-
+						// Save the H2 mV
+						MemoryWrite(Cal_page, OFFSET_H2_1_MV_CAL6_B2, 8, (uint8_t *) &ISE_mV_Cal_1_B2[ISEs.pH_H2.index]);	// Save both H2 mV to memory
 					}
 #endif
 
@@ -9304,16 +9315,16 @@ int main(void) {
 
 					// Calculate the H2 mV offset of Rinse from Cal 6 - Cal 5 line
 					float pH_H2_E_Rinse_Adj[2] = {pH_H2_E_Rinse[0], pH_H2_E_Rinse[1]};
-					for(i = 0; i < 2; i++)
-					{
-						float H2_mV_Rinse = Build_float(MemoryRead(Find_Cal_page(Last_cal_passed[i + ISEs.pH_H2.index]), OFFSET_CR_ISE_1_RINSE + ((i + ISEs.pH_H2.index) * 4), 4));
-						float H2_pH_Cal_T = Calc_pH_TCor(Sols->pH_EEP_Rinse, T_EEP_Cal, 25, 0, Sols->K_T_pH_Rinse);
-						float H2_Cal_Int = Build_float(MemoryRead(Find_Cal_page(Last_cal_passed[i + ISEs.pH_H2.index]), OFFSET_ISE_1_INT + ((i + ISEs.pH_H2.index) * 4), 4));
-						float H2_Rinse_offset = H2_mV_Rinse - (pH_H2_EEP_Slope[i] * H2_pH_Cal_T + H2_Cal_Int);
-						pH_H2_E_Rinse_Adj[i] -= H2_Rinse_offset;
-
-						DEBUG_PRINT(UARTprintf("H2 %d rinse mV offset: %d / 1000\n", i + 1, (int) (H2_Rinse_offset * 1000));)
-					}
+//					for(i = 0; i < 2; i++)
+//					{
+//						float H2_mV_Rinse = Build_float(MemoryRead(Find_Cal_page(Last_cal_passed[i + ISEs.pH_H2.index]), OFFSET_CR_ISE_1_RINSE + ((i + ISEs.pH_H2.index) * 4), 4));
+//						float H2_pH_Cal_T = Calc_pH_TCor(Sols->pH_EEP_Rinse, T_EEP_Cal, 25, 0, Sols->K_T_pH_Rinse);
+//						float H2_Cal_Int = Build_float(MemoryRead(Find_Cal_page(Last_cal_passed[i + ISEs.pH_H2.index]), OFFSET_ISE_1_INT + ((i + ISEs.pH_H2.index) * 4), 4));
+//						float H2_Rinse_offset = H2_mV_Rinse - (pH_H2_EEP_Slope[i] * H2_pH_Cal_T + H2_Cal_Int);
+//						pH_H2_E_Rinse_Adj[i] -= H2_Rinse_offset;
+//
+//						DEBUG_PRINT(UARTprintf("H2 %d rinse mV offset: %d / 1000\n", i + 1, (int) (H2_Rinse_offset * 1000));)
+//					}
 
 					//					float Steps_Sample[2] = {Steps_PreT1 + Steps_PostT1, Steps_PreT1 + Steps_PostT1};	// First mixing, Second mixing
 					//					float Steps_Samp_Endpoint[3];	// Sensor 1, Sensor 2, Sensor 3
@@ -9791,31 +9802,31 @@ int main(void) {
 
 						uint8_t Mix_Chosen_pH_Cr = Choose_Sensor(Cal_Number, pH_Cr_Samp_T1, pH_Cr_E_Rinse, T_Rinse, ISEs.pH_Cr, Sols);
 
-						// Adjust based on daily calibration difference between Rinse and Cal 6
-						// Adjust based on Cr sensor
-						for(i = 0; i < ISEs.pH_H2.size; i++)
-						{
-							float pH_H2_Slope_Samp_T1T = pH_H2_EEP_Slope[i] * (T_Samp_T1[mixing_index] + 273) / (T_EEP_Cal + 273);	// Temperature corrected slope
-							pH_H2_Samp_T1[i + (mixing_index * 10)] = pH_TCor_Rinse + ((pH_H2_E_Samp_T1[i] - pH_H2_E_Rinse_Adj[i]) / pH_H2_Slope_Samp_T1T); // pH of sample
-						}
-
-
+//						// Adjust based on daily calibration difference between Rinse and Cal 6
 //						// Adjust based on Cr sensor
 //						for(i = 0; i < ISEs.pH_H2.size; i++)
 //						{
 //							float pH_H2_Slope_Samp_T1T = pH_H2_EEP_Slope[i] * (T_Samp_T1[mixing_index] + 273) / (T_EEP_Cal + 273);	// Temperature corrected slope
-//							if(pH_Cr_Samp_T1[Mix_Chosen_pH_Cr] < pH_H2_Samp_T1[i] && mixing_index == 0)
-//							{
-//								pH_H2_Samp_T1[i] = pH_Cr_Samp_T1[Mix_Chosen_pH_Cr];
-//								pH_H2_E_Rinse_Adj[i] = -((pH_H2_Samp_T1[i] - pH_TCor_Rinse) * pH_H2_Slope_Samp_T1T - pH_H2_E_Samp_T1[i]);
-//								DEBUG_PRINT(UARTprintf("Adjusting H2 %d to align with Cr %d: %d\n", i + 1, Mix_Chosen_pH_Cr + 1, (int) (pH_Cr_Samp_T1[Mix_Chosen_pH_Cr] * 1000));)
-//							}
-//							else
-//							{
-//								float pH_H2_Slope_Samp_T1T = pH_H2_EEP_Slope[i] * (T_Samp_T1[mixing_index] + 273) / (T_EEP_Cal + 273);	// Temperature corrected slope
-//								pH_H2_Samp_T1[i + (mixing_index * 10)] = pH_TCor_Rinse + ((pH_H2_E_Samp_T1[i] - pH_H2_E_Rinse_Adj[i]) / pH_H2_Slope_Samp_T1T); // pH of sample
-//							}
+//							pH_H2_Samp_T1[i + (mixing_index * 10)] = pH_TCor_Rinse + ((pH_H2_E_Samp_T1[i] - pH_H2_E_Rinse_Adj[i]) / pH_H2_Slope_Samp_T1T); // pH of sample
 //						}
+
+
+						// Adjust based on Cr sensor
+						for(i = 0; i < ISEs.pH_H2.size; i++)
+						{
+							float pH_H2_Slope_Samp_T1T = pH_H2_EEP_Slope[i] * (T_Samp_T1[mixing_index] + 273) / (T_EEP_Cal + 273);	// Temperature corrected slope
+							if(pH_Cr_Samp_T1[Mix_Chosen_pH_Cr] < pH_H2_Samp_T1[i] && mixing_index == 0)
+							{
+								pH_H2_Samp_T1[i] = pH_Cr_Samp_T1[Mix_Chosen_pH_Cr];
+								pH_H2_E_Rinse_Adj[i] = -((pH_H2_Samp_T1[i] - pH_TCor_Rinse) * pH_H2_Slope_Samp_T1T - pH_H2_E_Samp_T1[i]);
+								DEBUG_PRINT(UARTprintf("Adjusting H2 %d to align with Cr %d: %d\n", i + 1, Mix_Chosen_pH_Cr + 1, (int) (pH_Cr_Samp_T1[Mix_Chosen_pH_Cr] * 1000));)
+							}
+							else
+							{
+								float pH_H2_Slope_Samp_T1T = pH_H2_EEP_Slope[i] * (T_Samp_T1[mixing_index] + 273) / (T_EEP_Cal + 273);	// Temperature corrected slope
+								pH_H2_Samp_T1[i + (mixing_index * 10)] = pH_TCor_Rinse + ((pH_H2_E_Samp_T1[i] - pH_H2_E_Rinse_Adj[i]) / pH_H2_Slope_Samp_T1T); // pH of sample
+							}
+						}
 
 
 #ifdef PRINT_UART
@@ -10719,35 +10730,6 @@ int main(void) {
 					DEBUG_PRINT(UARTprintf("Cutting endpoint steps to 50%% to test NH4...\n");)
 					Volume_T1_End *= .5;
 
-					//
-					// Alkalinity, T1 Mixing
-					//
-					if((gui32Error & ABORT_ERRORS) == 0)	// Prime everytime before long sample pull because we are pushing bubble back in when puming mixed plug
-					{
-						// Prime a little T1 before test to clear out any contamination
-						DEBUG_PRINT(UARTprintf("Priming T1... \n");)
-						RunValveToPossition_Bidirectional_AbortReady(V_T1, VALVE_STEPS_PER_POSITION);
-						PumpVolume(FW, PumpVol_tube_prime_buffers, Speed_Metering, 1);
-#ifdef PRIME_BUFFERS_TEST
-						if(MEASURE_ALKALINITY == 0)	// Only do an extra large prime if Alkalinity cycle wasn't ran
-						{
-							// In order to test if a big prime hurts things set biggest prime for testing purposes
-							DEBUG_PRINT(UARTprintf("Adding Max Prime... \n");)
-							PumpVolume(FW, 200, Speed_Metering, 1);
-						}
-#endif
-						userDelay(valve_delay, 1);
-					}
-
-					RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
-					PumpVolume(FW, PumpVol_sample_rinse, Speed_Fast, 1);
-					userDelay(valve_delay, 1);
-					RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);
-					PumpVolume(FW, PumpVol_air_bubble, Speed_Fast, 1);
-
-					//						DEBUG_PRINT(UARTprintf("Cutting endpoint steps to 50%% to test NH4...\n");)
-					//						Steps_T1_Endpoint[T_Chosen_Alk] *= .5;
-
 					if(Volume_T1_End < .050 * PumpVolRev / Pump_Ratio)
 					{
 						DEBUG_PRINT(UARTprintf("Settings steps to 50, steps T1 set to:\t%d\n", (int) (Volume_T1_End * 1000.0 * Pump_Ratio / PumpVolRev));)
@@ -10763,49 +10745,105 @@ int main(void) {
 						DEBUG_PRINT(UARTprintf("Mixing %d steps, %d nL of T1, goal is to be 6.3-8 after mix... \n", (int) ((Volume_T1_End * 1000.0 * Pump_Ratio) / PumpVolRev), (int) (Volume_T1_End * 1000.0));)
 					}
 
+					//
+					// T1 Mixing
+					//
+					uint8_t T1_cond_check = 1;
+					uint8_t T1_priming_index = 0;
+
+					while(((gui32Error & ABORT_ERRORS) == 0) && T1_cond_check > 0 && T1_priming_index < 3)
+					{
+						if(T1_priming_index > 0)	// If the check failed on the first go separate the first plug from the next ones with an air bubble
+						{
+							RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);
+							PumpVolume(FW, PumpVol_air_bubble, Speed_Fast, 1);
+							userDelay(valve_delay_after_air, 1);
+						}
+
+						// Prime a little T1 before test to clear out any contamination
+						DEBUG_PRINT(UARTprintf("Priming T1... \n");)
+						RunValveToPossition_Bidirectional_AbortReady(V_T1, VALVE_STEPS_PER_POSITION);
+						PumpVolume(FW, PumpVol_tube_prime_buffers, Speed_Metering, 1);
+#ifdef PRIME_BUFFERS_TEST
+						if(T1_priming_index == 0 && ui8Times_mixed == 0)	// Only do an extra large prime on the very first priming
+						{
+							// In order to test if a big prime hurts things set biggest prime for testing purposes
+							DEBUG_PRINT(UARTprintf("Adding Max Prime... \n");)
+							PumpVolume(FW, 200, Speed_Metering, 1);
+						}
+#endif
+						userDelay(valve_delay, 1);
+
+						RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
+//							PumpVolume(FW, PumpVol_plug + PumpVol_Solution + PumpVol_Rinse - PumpVol_tube_prime_buffers, Speed_Fast, 1);
+
+						// Spliting the pumping so the plug is moving slowly when going over ISEs
+						PumpVolume(FW, PumpVol_plug - PumpVol_tube_prime_buffers, Speed_Fast, 1);
+						PumpVolume(FW, PumpVol_Solution + PumpVol_Rinse, Speed_Metering, 1);
+
+//						T_Samp_T1[mixing_index] = MeasureTemperature(1);
+
+						float Conductivity_T1;// = MeasureConductivity(Sols->Cond_EEP_Rinse, Sols->Cond_EEP_Cal_2, 0);
+
+#ifndef COND_SOLUTION_STRUCT
+						if(Sols->pH_EEP_Cal_2 < 9) // This is Cal 3, not Cal 2
+						{
+							if(Sols->Cond_EEP_Clean == Sols->Cond_EEP_Clean)
+								Conductivity_T1 = MeasureConductivity(Sols->Cond_EEP_Clean, Sols->Cond_EEP_Cal_1, 0);
+							else
+								Conductivity_T1 = MeasureConductivity(Sols->Cond_EEP_Rinse, Sols->Cond_EEP_Cal_1, 0);
+						}
+						else
+						{
+							if(Sols->Cond_EEP_Clean == Sols->Cond_EEP_Clean)
+								Conductivity_T1 = MeasureConductivity(Sols->Cond_EEP_Clean, Sols->Cond_EEP_Cal_2, 0);
+							else
+								Conductivity_T1 = MeasureConductivity(Sols->Cond_EEP_Rinse, Sols->Cond_EEP_Cal_2, 0);
+						}
+#else
+						Conductivity_T1 = MeasureConductivity(Sols, 0);
+#endif
+
+						Conductivity_T1 = (Conductivity_T1 / (1 + COND_TCOMP_SAMP*(T_Samp - 25)));
+
+						DEBUG_PRINT(UARTprintf("Temp corrected cond Samp + T1: %d uS/cm * 1000\n", (int) ((Conductivity_T1) * 1000));)
+
+						T1_priming_index++;
+
+						if(Conductivity_T1 > 150 + Conductivity)
+						{
+							T1_cond_check = 0;
+						}
+						else
+						{
+							gui32Error |= T1_PRIME_COND_ERROR; // Update error
+							update_Error();
+						}
+					}
+
+					PumpVolume(FW, PumpVol_sample_rinse - (PumpVol_plug + PumpVol_Solution + PumpVol_Rinse), Speed_Fast, 1);
+					FindPossitionZeroPump();
+					userDelay(valve_delay, 1);
+					RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);
+					PumpStepperRunStepSpeed_AbortReady(FW, 2000, Speed_Fast);	// Going to leave this as steps to keep volume of air to a miniumum before metering T1
+
+					T1_cond_check = 1;
+
+					// T1 Mixing
+					if(ALK_MIX_IN_AIR)
+					{
+						RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Move valve to air
+						DEBUG_PRINT(UARTprintf("Pumping large air plug so arrays and reference are uncovered during mixing\n");)
+						PumpStepperRunStepSpeed_AbortReady(FW, 7000 + 1000, Speed_Fast);
+					}
+					userDelay(valve_delay_after_air, 1);
+
+					//						DEBUG_PRINT(UARTprintf("Cutting endpoint steps to 50%% to test NH4...\n");)
+					//						Steps_T1_Endpoint[T_Chosen_Alk] *= .5;
+
 					RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Move valve to air
 					FindPossitionZeroPump();
 					userDelay(valve_delay_after_air, 1);
-
-#ifdef ALK_MIX_TWO_PLUGS
-					// Pump buffer and solution
-					if(ALK_MIX_TWO_PLUGS)
-					{
-						RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);		// Move valve to sample
-						PumpStepperRunStepSpeed_AbortReady(FW, Steps_PreT1, Speed_Metering);
-						userDelay(valve_delay_metering, 1);
-//						if(Steps_T1_End <= 600)
-//						{
-							RunValveToPossition_Bidirectional_AbortReady(V_T1, VALVE_STEPS_PER_POSITION);		// Move valve to buffer 1
-							PumpVolume(FW, Volume_T1_End, Speed_Metering, 1);
-							userDelay(valve_delay_metering, 1);
-//						}
-//						else
-//						{
-//							uint16_t Steps_to_go = Steps_T1_End;
-//							while(Steps_to_go > 600)
-//							{
-//								Steps_to_go -= 600;
-//								RunValveToPossition_Bidirectional_AbortReady(V_T1, VALVE_STEPS_PER_POSITION);		// Move valve to buffer 1
-//								PumpStepperRunStepSpeed_AbortReady(FW, 600, Speed_Metering);
-//								userDelay(valve_delay_metering, 1);
-//								RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);		// Move valve to sample
-//								PumpStepperRunStepSpeed_AbortReady(FW, 400, Speed_Metering);
-//								userDelay(valve_delay_metering, 1);
-//							}
-//							RunValveToPossition_Bidirectional_AbortReady(V_T1, VALVE_STEPS_PER_POSITION);		// Move valve to buffer 1
-//							PumpStepperRunStepSpeed_AbortReady(FW, Steps_to_go, Speed_Metering);
-//							userDelay(valve_delay_metering, 1);
-//						}
-
-						RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);		// Move valve to sample
-						PumpVolume(FW, PumpVol_PostT1, Speed_Metering, 1);
-						userDelay(valve_delay_metering, 1);
-						RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Move valve to air
-						PumpVolume(FW, (2 * PumpVolRev + (PumpVolRev - Volume_T1_End)), Speed_Fast, 1);	// Air bubble size set to return pump to zero position
-						userDelay(valve_delay_after_air, 1);
-					}
-#endif
 
 					// Pump buffer and solution
 					RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);		// Move valve to sample
@@ -10980,6 +11018,18 @@ int main(void) {
 					// For disinfection cartridge flush with sample to clear our HEPES
 					if(ISEs.Config >= DISINFECTION_CART && ISEs.Config <= DISINFECTION_CART_2CR_6NH4_2CR)	// This is a disinfection cartridge
 					{
+						DEBUG_PRINT(UARTprintf("Rinsing with sample and air bubbles\n");)
+
+						for (i = 0; i < 3; i++) // Loop over air/solution cycle 3 times for single solution
+						{
+							RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
+							PumpVolume(FW, PumpVol_Solution, Speed_Fast, 1);
+							if(i != (Number_of_bubbles_samp - 1))
+								userDelay(valve_delay, 1);
+							RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
+							PumpVolume(FW, PumpVol_air_bubble, Speed_Fast, 1);
+							userDelay(valve_delay_after_air, 1);
+						}
 						RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
 						PumpVolume(FW, PumpVol_sample_rinse, Speed_Fast, 1);
 						userDelay(valve_delay, 1);

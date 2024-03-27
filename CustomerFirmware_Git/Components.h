@@ -563,8 +563,11 @@ extern uint8_t gui8IO_Ext2_Reg3;
 #define OFFSET_MG_1_PH_SLOPE	(182 + 256)
 #define OFFSET_MG_2_MV_CAL_1	(186 + 256)
 #define OFFSET_MG_2_PH_SLOPE	(186 + 256)
-#define OFFSET_CA_1_MV_CAL_2	(190 + 256)
-#define OFFSET_CA_2_MV_CAL_2	(194 + 256)
+//#define OFFSET_CA_1_MV_CAL_2	(190 + 256)
+//#define OFFSET_CA_2_MV_CAL_2	(194 + 256)
+#define OFFSET_H2_1_MV_CAL6_B2	(190 + 256)
+#define OFFSET_H2_2_MV_CAL6_B2	(194 + 256)
+
 
 #define OFFSET_TH_1_LOG_K		(80 + 256)
 #define OFFSET_TH_2_LOG_K		(84 + 256)
