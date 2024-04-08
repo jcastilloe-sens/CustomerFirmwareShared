@@ -9965,6 +9965,7 @@ int main(void) {
 
 						if(in_range > 0)	// Check that at least one sensor was in range before incrementing the mixing index
 						{
+							float pH_offset = 0;
 							if(mixing_index == 1) // This is the second mix, want to make sure a sensor has 2 valid points before incrementing the counter
 							{
 								uint8_t Complete = 0;
@@ -10040,6 +10041,26 @@ int main(void) {
 									}
 #endif	// UNIVERSAL_PICKING_FUNCTION
 
+									// Look at the difference between the two mixes to predict what the pH actually is
+									for(i = 0; i < ISEs.pH_H2.size; i++)
+									{
+										float Alk_Slope = (((Volume_Sample + (float) (PumpVol_T1[1] - Volume_T1_dead)) * pow(10, -pH_H2_Samp_T1[i + 10])) - ((Volume_Sample + (float) (PumpVol_T1[0] - Volume_T1_dead)) * pow(10, -pH_H2_Samp_T1[i]))) / ((float) (PumpVol_T1[1] - Volume_T1_dead) - (float) (PumpVol_T1[0] - Volume_T1_dead));
+										if(Alk_Slope < Sols->HCl_N)
+										{
+											DEBUG_PRINT(UARTprintf("Based on difference it appears actual pH is lower than what H2 %d measured\n", i + 1);)
+
+//											float pH_offset = 0;
+											while(Alk_Slope < Sols->HCl_N)
+											{
+												pH_offset -= 0.1;
+												Alk_Slope = (((Volume_Sample + (float) (PumpVol_T1[1] - Volume_T1_dead)) * pow(10, -(pH_H2_Samp_T1[i + 10] + pH_offset))) - ((Volume_Sample + (float) (PumpVol_T1[0] - Volume_T1_dead)) * pow(10, -(pH_H2_Samp_T1[i] + pH_offset)))) / ((float) (PumpVol_T1[1] - Volume_T1_dead) - (float) (PumpVol_T1[0] - Volume_T1_dead));
+											}
+											pH_offset += 0.1;	// Take one step back up to underestimate the change rather than overestimate
+											DEBUG_PRINT(UARTprintf("Estimated to be about %d /1000 lower\n", (int) (pH_offset * 1000));)
+										}
+									}
+
+
 									// Need to decide which mix to keep...
 									if(Mix_Chosen_pH_1 == Mix_Chosen_pH_2)
 									{
@@ -10087,8 +10108,8 @@ int main(void) {
 									Mix_Chosen_pH = Choose_Sensor(Cal_Number, pH_Samp_T1, pH_Cr_E_Rinse, T_Rinse, ISEs.pH_Cr, Sols);
 #endif	// UNIVERSAL_PICKING_FUNCTION
 
-								DEBUG_PRINT(UARTprintf("Using pH of %d pH * 1000 to calculate steps for second mix!\n", (int) (pH_H2_Samp_T1[Mix_Chosen_pH] * 1000));)
-								float Volume_Temp = (((float) (PumpVol_T1[0] - Volume_T1_dead) * (Sols->HCl_N - pow(10, -pH_H2_Samp_T1[Mix_Chosen_pH])) + Volume_Sample * (pow(10, -3.6) - pow(10, -pH_H2_Samp_T1[Mix_Chosen_pH]))) / (Sols->HCl_N - pow(10, -3.6))) + Volume_T1_dead;
+								DEBUG_PRINT(UARTprintf("Using pH of %d pH * 1000 to calculate steps for second mix!\n", (int) ((pH_H2_Samp_T1[Mix_Chosen_pH] + pH_offset) * 1000));)
+								float Volume_Temp = (((float) (PumpVol_T1[0] - Volume_T1_dead) * (Sols->HCl_N - pow(10, -(pH_H2_Samp_T1[Mix_Chosen_pH] + pH_offset))) + Volume_Sample * (pow(10, -3.6) - pow(10, -(pH_H2_Samp_T1[Mix_Chosen_pH] + pH_offset)))) / (Sols->HCl_N - pow(10, -3.6))) + Volume_T1_dead;
 
 
 								DEBUG_PRINT(UARTprintf("Steps for second mix calculated to be %d steps, or %d nL!\n", (int) (Volume_Temp * Pump_Ratio * 1000.0 / PumpVolRev), (int) (Volume_Temp * 1000.0));)
@@ -10118,7 +10139,7 @@ int main(void) {
 								if((PumpVol_T1[0] - PumpVol_T1[1]) < PumpVolRev * .025/Pump_Ratio)	// Check that there is at least 25 steps difference between the two pump cycles
 								{
 									DEBUG_PRINT(UARTprintf("Step difference between the first and second mix is less than 25, recalculating to get to 4.0\n");)
-									Volume_Temp = (((float) (PumpVol_T1[0] - Volume_T1_dead) * (Sols->HCl_N - pow(10, -pH_H2_Samp_T1[Mix_Chosen_pH])) + Volume_Sample * (pow(10, -4.0) - pow(10, -pH_H2_Samp_T1[Mix_Chosen_pH]))) / (Sols->HCl_N - pow(10, -4.0))) + Volume_T1_dead;
+									Volume_Temp = (((float) (PumpVol_T1[0] - Volume_T1_dead) * (Sols->HCl_N - pow(10, -(pH_H2_Samp_T1[Mix_Chosen_pH] + pH_offset))) + Volume_Sample * (pow(10, -4.0) - pow(10, -(pH_H2_Samp_T1[Mix_Chosen_pH] + pH_offset)))) / (Sols->HCl_N - pow(10, -4.0))) + Volume_T1_dead;
 									if(Volume_Temp > .450 * PumpVolRev / Pump_Ratio)	// Check
 									{
 										Volume_Temp = .450 * PumpVolRev / Pump_Ratio;
@@ -10138,7 +10159,7 @@ int main(void) {
 //											PumpVol_T1[1] = PumpVol_T1[0] + (PumpVolRev * .025/Pump_Ratio);
 
 											DEBUG_PRINT(UARTprintf("Step difference between the first and second mix still less than 25 steps, calculating to shift pH 0.3\n");)
-											Volume_Temp = (((float) (PumpVol_T1[0] - Volume_T1_dead) * (Sols->HCl_N - pow(10, -pH_H2_Samp_T1[Mix_Chosen_pH])) + Volume_Sample * (pow(10, -(pH_H2_Samp_T1[Mix_Chosen_pH] - .3)) - pow(10, -pH_H2_Samp_T1[Mix_Chosen_pH]))) / (Sols->HCl_N - pow(10, -(pH_H2_Samp_T1[Mix_Chosen_pH] - .3)))) + Volume_T1_dead;
+											Volume_Temp = (((float) (PumpVol_T1[0] - Volume_T1_dead) * (Sols->HCl_N - pow(10, -(pH_H2_Samp_T1[Mix_Chosen_pH] + pH_offset))) + Volume_Sample * (pow(10, -(pH_H2_Samp_T1[Mix_Chosen_pH] + pH_offset - .3)) - pow(10, -(pH_H2_Samp_T1[Mix_Chosen_pH] + pH_offset)))) / (Sols->HCl_N - pow(10, -(pH_H2_Samp_T1[Mix_Chosen_pH] + pH_offset - .3)))) + Volume_T1_dead;
 											if((PumpVol_T1[0] - Volume_Temp) < PumpVolRev * .025/Pump_Ratio)
 											{
 												DEBUG_PRINT(UARTprintf("Step difference calculated is less than 25 steps, setting to 25 steps plus original mix\n");)
@@ -10154,7 +10175,7 @@ int main(void) {
 										{
 											DEBUG_PRINT(UARTprintf("First mix below 3, then calculated that removing 25 steps would be over 4 so just calculate based on the first mix :(\n");)
 
-											Volume_Temp = (((float) (PumpVol_T1[0] - Volume_T1_dead) * (Sols->HCl_N - pow(10, -pH_H2_Samp_T1[Mix_Chosen_pH])) + Volume_Sample * (pow(10, -4.5) - pow(10, -pH_H2_Samp_T1[Mix_Chosen_pH]))) / (Sols->HCl_N - pow(10, -4.5))) + Volume_T1_dead;
+											Volume_Temp = (((float) (PumpVol_T1[0] - Volume_T1_dead) * (Sols->HCl_N - pow(10, -(pH_H2_Samp_T1[Mix_Chosen_pH] + pH_offset))) + Volume_Sample * (pow(10, -4.5) - pow(10, -(pH_H2_Samp_T1[Mix_Chosen_pH] + pH_offset)))) / (Sols->HCl_N - pow(10, -4.5))) + Volume_T1_dead;
 											PumpVol_T1[1] = Volume_Temp;
 											DEBUG_PRINT(UARTprintf("Step difference between the first and second mix still less than 25 steps, assuming %d calculated steps or %d nL is the endpoint!\n", (int) (Volume_Temp * Pump_Ratio * 1000 / PumpVolRev), (int) (Volume_Temp * 1000));)
 
