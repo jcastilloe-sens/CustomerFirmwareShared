@@ -10057,6 +10057,11 @@ int main(void) {
 											}
 											pH_offset += 0.1;	// Take one step back up to underestimate the change rather than overestimate
 											DEBUG_PRINT(UARTprintf("Estimated to be about %d /1000 lower\n", (int) (pH_offset * 1000));)
+											if((pH_H2_Samp_T1[Mix_Chosen_pH_2] + pH_offset) < 2.3 && pH_offset < 0)
+											{
+												pH_offset = 2.3 - pH_H2_Samp_T1[Mix_Chosen_pH_2];
+												DEBUG_PRINT(UARTprintf("This seems unrealistic, setting to %d / 1000 lower\n", (int) (pH_offset * 1000));)
+											}
 										}
 									}
 
