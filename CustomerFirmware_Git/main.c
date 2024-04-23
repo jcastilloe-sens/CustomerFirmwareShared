@@ -14053,42 +14053,42 @@ int main(void) {
 
 			uint32_t counter = 0;
 
-			// Check for error that would prevent us from starting calibration, blink light red if this occurs
-			if(gui32Error != ROAM_RESET)	// Something in the cartridge failed (max number of tests exceeded or cartridge expired) or battery check failed
-			{
-				if(ENFORCE_ERRORS != 0)
-				{
-					update_Status(STATUS_TEST, OPERATION_TEST_FAILED);	// Send status to BT that this is pre-check
-
-					gui32Error &= ~ROAM_RESET;	// Remove ROAM_RESET flag since software stopped calibration
-					update_Error();
-
-					SetLED(GREEN_BUTTON | GREEN_BUTTON_V, 0);
-					SetLED(RED_BUTTON | RED_BUTTON_V, 1);
-					while(GPIOPinRead(GPIO_PORTF_BASE, GPIO_PIN_3) == GPIO_PIN_3 && counter < TIMEOUT)
-					{
-						SysCtlDelay(SysCtlClockGet()/3000);
-						counter++;
-
-						// Break out of while loop if continue calibration command is received
-						if(g_ui32DataRx0[0] == CONTINUE_TEST && g_ulSSI0RXTO > 0)
-						{
-							g_ulSSI0RXTO = 0;
-							break;
-						}
-
-						// Return to idle if abort command is received
-						if(g_state != STATE_MEASUREMENT)
-						{
-							break;
-						}
-					}
-
-					g_state = STATE_IDLE;
-					g_next_state = STATE_IDLE;
-					break;
-				}
-			}
+//			// Check for error that would prevent us from starting calibration, blink light red if this occurs
+//			if(gui32Error != ROAM_RESET)	// Something in the cartridge failed (max number of tests exceeded or cartridge expired) or battery check failed
+//			{
+//				if(ENFORCE_ERRORS != 0)
+//				{
+//					update_Status(STATUS_TEST, OPERATION_TEST_FAILED);	// Send status to BT that this is pre-check
+//
+//					gui32Error &= ~ROAM_RESET;	// Remove ROAM_RESET flag since software stopped calibration
+//					update_Error();
+//
+//					SetLED(GREEN_BUTTON | GREEN_BUTTON_V, 0);
+//					SetLED(RED_BUTTON | RED_BUTTON_V, 1);
+//					while(GPIOPinRead(GPIO_PORTF_BASE, GPIO_PIN_3) == GPIO_PIN_3 && counter < TIMEOUT)
+//					{
+//						SysCtlDelay(SysCtlClockGet()/3000);
+//						counter++;
+//
+//						// Break out of while loop if continue calibration command is received
+//						if(g_ui32DataRx0[0] == CONTINUE_TEST && g_ulSSI0RXTO > 0)
+//						{
+//							g_ulSSI0RXTO = 0;
+//							break;
+//						}
+//
+//						// Return to idle if abort command is received
+//						if(g_state != STATE_MEASUREMENT)
+//						{
+//							break;
+//						}
+//					}
+//
+//					g_state = STATE_IDLE;
+//					g_next_state = STATE_IDLE;
+//					break;
+//				}
+//			}
 
 
 			if(CheckCalibration(pui8SysStatus, 1) == 1)
@@ -14210,7 +14210,7 @@ int main(void) {
 			}
 
 			SetLED(GREEN_BUTTON | GREEN_BUTTON_V | RED_BUTTON | RED_BUTTON_V | BLUE_BUTTON | BLUE_BUTTON_V, 0);
-			if(g_state == STATE_MEASUREMENT)
+			if(g_state == STATE_FACTORY_CAL)
 				SetLED(GREEN_BUTTON_BLINK, 1);
 
 			while(GPIOPinRead(GPIO_PORTF_BASE, GPIO_PIN_3) == 0);
@@ -14219,7 +14219,7 @@ int main(void) {
 				g_state = STATE_IDLE;
 
 			// Return to idle if abort command is received
-			if(g_state != STATE_MEASUREMENT)
+			if(g_state != STATE_FACTORY_CAL)
 				break;
 
 			update_Status(STATUS_TEST, OPERATION_TEST_RINSE);
@@ -15614,7 +15614,7 @@ int main(void) {
 				}
 
 				// Check if state changed, this happens when abort command is received
-				if(g_state != STATE_MEASUREMENT)
+				if(g_state != STATE_FACTORY_CAL)
 					break;
 			}
 
@@ -15651,7 +15651,7 @@ int main(void) {
 				}
 
 				// Check if state changed, this happens when abort command is received
-				if(g_state != STATE_MEASUREMENT)
+				if(g_state != STATE_FACTORY_CAL)
 					break;
 			}
 			while(GPIOPinRead(GPIO_PORTF_BASE, GPIO_PIN_3) == 0);
