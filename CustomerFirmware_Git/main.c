@@ -8315,12 +8315,13 @@ int main(void) {
 				}
 
 
-				if(MEAUSURE_WHILE_PUMPING)
-				{
-					CollectISEmV_WhilePumping(FW, 6000, ISE_E_Samp, 0xFFFF, 60, PRINT_ISE_TIME_DATA, &ISEs);
-//					CollectISEmV(ISE_E_Samp, 0xFFFF, ISE_WAIT, PRINT_ISE_TIME_DATA, &ISEs);
-				}
-				else if(PUMP_THEN_MEASURE)
+//				if(MEAUSURE_WHILE_PUMPING)
+//				{
+//					CollectISEmV_WhilePumping(FW, 6000, ISE_E_Samp, 0xFFFF, 60, PRINT_ISE_TIME_DATA, &ISEs);
+////					CollectISEmV(ISE_E_Samp, 0xFFFF, ISE_WAIT, PRINT_ISE_TIME_DATA, &ISEs);
+//				}
+//				else if(PUMP_THEN_MEASURE)
+				if(PUMP_THEN_MEASURE)
 				{
 
 					// GND RE for ISEs
@@ -11908,82 +11909,7 @@ int main(void) {
 					float Conductivity_B1;
 					if((gui32Error & ABORT_ERRORS) == 0)
 					{
-						//							DEBUG_PRINT(UARTprintf("pH in correct range, running chlorine test!\n");)
-//						in_range = 1;
-//						T_Samp_B1 = MeasureTemperature(1);
-//						MemoryWrite(Test_page, OFFSET_B1_MIX_START_TEMP, 4, (uint8_t *) &T_Samp_B1);
-
-						ConnectMemory(0);
-
-#ifdef CV_MEASUREMENT
-//						int16_t Positive_Step = 1000;
-//						int16_t Negative_Step = 0;
-
-						CVCleaning(800, -400, 100, 1, 1);
-#endif
-
-						// Read ADC here to make sure it is working, I've seen ADC have problem during Cl read causing analog board to reset which threw off
-						// Cl reading, by reading here hopefully we catch the problem and fix it before doing anything to the amperometric arrays
-						ADCReadAvg(0, ADC4_CS_B, 5);
-
-						// Turn on short and off parallel resistor to allow large current flows
-						IO_Ext_Set(IO_EXT2_ADDR, 3, WORK_EL_HIGH_CURRENT, 1);	// Parallel switch must be on with short switch to work
-						IO_Ext_Set(IO_EXT2_ADDR, 2, WORK_EL_SHORT, 1);
-						if(HIGH_RANGE)
-							IO_Ext_Set(IO_EXT2_ADDR, 3, WORK_EL_MID_CURRENT, 1);
-
-						// Set reference for amperometric mode
-						IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWA, 1);
-						IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWB, 1);
-
-						DACVoltageSet(0, Amp_Voltage_Set, true);
-
-						// Connect all electrodes together for measuring
-						IO_Ext_Set(IO_EXT1_ADDR, 3, WORK_EL_SWA, 1);
-						IO_Ext_Set(IO_EXT1_ADDR, 3, WORK_EL_SWB, 1);
-
-#ifdef READ_REF_GUARD
-						ReadRefGuard(3);
-//						userDelay(3000, 1);	// Delay 3 seconds to let large current flow through before switching in reading resistor
-#else
-						userDelay(3000, 1);	// Delay 3 seconds to let large current flow through before switching in reading resistor
-#endif
-
-						IO_Ext_Set(IO_EXT2_ADDR, 3, WORK_EL_HIGH_CURRENT, 0);
-						IO_Ext_Set(IO_EXT2_ADDR, 2, WORK_EL_SHORT, 0);	// Turn off short switch
-
-#ifdef READ_REF_GUARD
-						// Read Ref until last 1 second then read
-						ReadRefGuard(CL_TRACE_TIME - 1);
-//						userDelay(11000, 1);	// Delay 3 seconds to let large current flow through before switching in reading resistor
-						if(HIGH_RANGE)
-							Cl_nA_FCl = *(CurrentTimeRead(0, ADC4_CS_B, 1, (int) Amp_Voltage_Set, 2, .1) + 1);	// nA
-						else
-							Cl_nA_FCl = *(CurrentTimeRead(0, ADC4_CS_B, 1, (int) Amp_Voltage_Set, 0, .1) + 1);	// nA
-
-#else
-#ifdef PRINT_CURRENT
-						if(HIGH_RANGE)
-							Cl_nA_FCl = *(CurrentTimeRead(0, ADC4_CS_B, CL_TRACE_TIME, (int) Amp_Voltage_Set, 2, .1) + 1);	// nA
-						else
-							Cl_nA_FCl = *(CurrentTimeRead(0, ADC4_CS_B, CL_TRACE_TIME, (int) Amp_Voltage_Set, 0, .1) + 1);	// nA
-#else
-						if(HIGH_RANGE)
-							Cl_nA_FCl = *(CurrentTimeRead(0, ADC4_CS_B, CL_TRACE_TIME, (int) Amp_Voltage_Set, 2, .005) + 1);	// nA
-						else
-							Cl_nA_FCl = *(CurrentTimeRead(0, ADC4_CS_B, CL_TRACE_TIME, (int) Amp_Voltage_Set, 0, .005) + 1);	// nA
-#endif
-#endif
-
-
-						// Let the working electrodes float when not measuring
-						IO_Ext_Set(IO_EXT1_ADDR, 3, WORK_EL_SWA, 0);
-						IO_Ext_Set(IO_EXT1_ADDR, 3, WORK_EL_SWB, 0);
-						if(HIGH_RANGE)
-							IO_Ext_Set(IO_EXT2_ADDR, 3, WORK_EL_MID_CURRENT, 0);
-						DACVoltageSet(0, 0, true);
-
-						ConnectMemory(1);
+						Cl_nA_FCl = ReadClnA(HIGH_RANGE, Amp_Voltage_Set, CL_TRACE_TIME);
 
 						DEBUG_PRINT(UARTprintf("FCl raw: %d nA * 1000\n", (int) (Cl_nA_FCl * 1000));)
 
@@ -12491,75 +12417,7 @@ int main(void) {
 						T_Samp_B2 = MeasureTemperature(1);
 						MemoryWrite(Test_page, OFFSET_B2_MIX_START_TEMP, 4, (uint8_t *) &T_Samp_B2);
 
-//						in_range = 1;
-						ConnectMemory(0);
-
-#ifdef CV_MEASUREMENT
-//						int16_t Positive_Step = 1000;
-//						int16_t Negative_Step = 0;
-
-						CVCleaning(800, -400, 100, 1, 1);
-#endif
-
-						// Read ADC here to make sure it is working, I've seen ADC have problem during Cl read causing analog board to reset which threw off
-						// Cl reading, by reading here hopefully we catch the problem and fix it before doing anything to the amperometric arrays
-						ADCReadAvg(0, ADC4_CS_B, 5);
-
-						// Turn on short and off parallel resistor to allow large current flows
-						IO_Ext_Set(IO_EXT2_ADDR, 3, WORK_EL_HIGH_CURRENT, 1);	// Parallel switch must be on with short switch to work
-						IO_Ext_Set(IO_EXT2_ADDR, 2, WORK_EL_SHORT, 1);
-						if(HIGH_RANGE)
-							IO_Ext_Set(IO_EXT2_ADDR, 3, WORK_EL_MID_CURRENT, 1);
-
-						// Set reference for amperometric mode
-						IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWA, 1);
-						IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWB, 1);
-
-						DACVoltageSet(0, Amp_Voltage_Set, true);
-
-						// Connect all electrodes together for measuring
-						IO_Ext_Set(IO_EXT1_ADDR, 3, WORK_EL_SWA, 1);
-						IO_Ext_Set(IO_EXT1_ADDR, 3, WORK_EL_SWB, 1);
-
-#ifdef READ_REF_GUARD
-						ReadRefGuard(3);
-//						userDelay(3000, 1);	// Delay 3 seconds to let large current flow through before switching in reading resistor
-#else
-						userDelay(3000, 1);	// Delay 3 seconds to let large current flow through before switching in reading resistor
-#endif
-
-						IO_Ext_Set(IO_EXT2_ADDR, 3, WORK_EL_HIGH_CURRENT, 0);
-						IO_Ext_Set(IO_EXT2_ADDR, 2, WORK_EL_SHORT, 0);	// Turn off short switch
-
-#ifdef READ_REF_GUARD
-						ReadRefGuard(CL_TRACE_TIME - 1);	// Read the reference guard for 3 seconds during the short
-//						userDelay(11000, 1);	// Delay 3 seconds to let large current flow through before switching in reading resistor
-						if(HIGH_RANGE)
-							Cl_nA_TCl = *(CurrentTimeRead(0, ADC4_CS_B, 1, (int) Amp_Voltage_Set, 2, .1) + 1);	// nA
-						else
-							Cl_nA_TCl = *(CurrentTimeRead(0, ADC4_CS_B, 1, (int) Amp_Voltage_Set, 0, .1) + 1);	// nA
-#else	// READ_REF_GUARD
-#ifdef PRINT_CURRENT
-						if(HIGH_RANGE)
-							Cl_nA_TCl = *(CurrentTimeRead(0, ADC4_CS_B, CL_TRACE_TIME, (int) Amp_Voltage_Set, 2, .1) + 1);	// nA
-						else
-							Cl_nA_TCl = *(CurrentTimeRead(0, ADC4_CS_B, CL_TRACE_TIME, (int) Amp_Voltage_Set, 0, .1) + 1);	// nA
-#else
-						if(HIGH_RANGE)
-							Cl_nA_TCl = *(CurrentTimeRead(0, ADC4_CS_B, CL_TRACE_TIME, (int) Amp_Voltage_Set, 2, .005) + 1);	// nA
-						else
-							Cl_nA_TCl = *(CurrentTimeRead(0, ADC4_CS_B, CL_TRACE_TIME, (int) Amp_Voltage_Set, 0, .005) + 1);	// nA
-#endif	// PRINT_CURRENT
-#endif	// READ_REF_GUARD
-
-						// Let the working electrodes float when not measuring
-						IO_Ext_Set(IO_EXT1_ADDR, 3, WORK_EL_SWA, 0);
-						IO_Ext_Set(IO_EXT1_ADDR, 3, WORK_EL_SWB, 0);
-						if(HIGH_RANGE)
-							IO_Ext_Set(IO_EXT2_ADDR, 3, WORK_EL_MID_CURRENT, 0);
-						DACVoltageSet(0, 0, true);
-
-						ConnectMemory(1);
+						Cl_nA_TCl = ReadClnA(HIGH_RANGE, Amp_Voltage_Set, CL_TRACE_TIME);
 
 						DEBUG_PRINT(UARTprintf("TCl raw: %d nA * 1000\n", (int) (Cl_nA_TCl * 1000));)
 
@@ -14175,7 +14033,6 @@ int main(void) {
 #ifdef TESTING_MODE
 		case STATE_FACTORY_CAL:
 		{
-
 			// Must send status before updating error so we know where to assign error
 			update_Status(STATUS_TEST, OPERATION_TEST_PRECHECK);	// Send status to BT that this is pre-check
 
@@ -15320,46 +15177,7 @@ int main(void) {
 							{
 								if(1)
 								{
-//									UARTprintf("pH in correct range, running chlorine test!\n");
-									in_range = 1;
-									ConnectMemory(0);
-
-									// Read ADC here to make sure it is working, I've seen ADC have problem during Cl read causing analog board to reset which threw off
-									// Cl reading, by reading here hopefully we catch the problem and fix it before doing anything to the amperometric arrays
-									ADCReadAvg(0, ADC4_CS_B, 5);
-
-									// Turn on short and off parallel resistor to allow large current flows
-									IO_Ext_Set(IO_EXT2_ADDR, 3, WORK_EL_HIGH_CURRENT, 1);	// Parallel switch must be on with short switch to work
-									IO_Ext_Set(IO_EXT2_ADDR, 2, WORK_EL_SHORT, 1);
-									if(HIGH_RANGE)
-										IO_Ext_Set(IO_EXT2_ADDR, 3, WORK_EL_MID_CURRENT, 1);
-
-									// Set reference for amperometric mode
-									IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWA, 1);
-									IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWB, 1);
-									// Connect all electrodes together for measuring
-									IO_Ext_Set(IO_EXT1_ADDR, 3, WORK_EL_SWA, 1);
-									IO_Ext_Set(IO_EXT1_ADDR, 3, WORK_EL_SWB, 1);
-
-									DACVoltageSet(0, Amp_Voltage_Set, true);
-
-									userDelay(3000, 1);	// Delay 3 seconds to let large current flow through before switching in reading resistor
-
-									IO_Ext_Set(IO_EXT2_ADDR, 3, WORK_EL_HIGH_CURRENT, 0);
-									IO_Ext_Set(IO_EXT2_ADDR, 2, WORK_EL_SHORT, 0);	// Turn off short switch
-									if(HIGH_RANGE)
-										Cl_nA_FCl[k] = *(CurrentTimeRead(0, ADC4_CS_B, 12, (int) Amp_Voltage_Set, 2, .005) + 1);	// nA
-									else
-										Cl_nA_FCl[k] = *(CurrentTimeRead(0, ADC4_CS_B, 12, (int) Amp_Voltage_Set, 0, .005) + 1);	// nA
-
-									// Let the working electrodes float when not measuring
-									IO_Ext_Set(IO_EXT1_ADDR, 3, WORK_EL_SWA, 0);
-									IO_Ext_Set(IO_EXT1_ADDR, 3, WORK_EL_SWB, 0);
-									if(HIGH_RANGE)
-										IO_Ext_Set(IO_EXT2_ADDR, 3, WORK_EL_MID_CURRENT, 0);
-									DACVoltageSet(0, 0, true);
-
-									ConnectMemory(1);
+									Cl_nA_FCl[k] = ReadClnA(HIGH_RANGE, Amp_Voltage_Set, CL_TRACE_TIME);
 
 									UARTprintf("FCl raw: %d nA * 1000\n", (int) (Cl_nA_FCl[k] * 1000));
 
@@ -15529,48 +15347,7 @@ int main(void) {
 
 							if((gui32Error & 0) == 0)
 							{
-//									UARTprintf("pH is in correct range, running chlorine test!\n");
-
-									in_range = 1;
-									ConnectMemory(0);
-
-									// Read ADC here to make sure it is working, I've seen ADC have problem during Cl read causing analog board to reset which threw off
-									// Cl reading, by reading here hopefully we catch the problem and fix it before doing anything to the amperometric arrays
-									ADCReadAvg(0, ADC4_CS_B, 5);
-
-									// Turn on short and off parallel resistor to allow large current flows
-									IO_Ext_Set(IO_EXT2_ADDR, 3, WORK_EL_HIGH_CURRENT, 1);	// Parallel switch must be on with short switch to work
-									IO_Ext_Set(IO_EXT2_ADDR, 2, WORK_EL_SHORT, 1);
-									if(HIGH_RANGE)
-										IO_Ext_Set(IO_EXT2_ADDR, 3, WORK_EL_MID_CURRENT, 1);
-
-									// Set reference for amperometric mode
-									IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWA, 1);
-									IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWB, 1);
-
-									// Connect all electrodes together for measuring
-									IO_Ext_Set(IO_EXT1_ADDR, 3, WORK_EL_SWA, 1);
-									IO_Ext_Set(IO_EXT1_ADDR, 3, WORK_EL_SWB, 1);
-
-									DACVoltageSet(0, Amp_Voltage_Set, true);
-
-									userDelay(3000, 1);			// Let run 3 seconds with short to allow large current at beginning
-
-									IO_Ext_Set(IO_EXT2_ADDR, 3, WORK_EL_HIGH_CURRENT, 0);
-									IO_Ext_Set(IO_EXT2_ADDR, 2, WORK_EL_SHORT, 0);	// Turn off short switch
-									if(HIGH_RANGE)
-										Cl_nA_TCl[k] = *(CurrentTimeRead(0, ADC4_CS_B, 12, (int) Amp_Voltage_Set, 2, .005) + 1);	// nA
-									else
-										Cl_nA_TCl[k] = *(CurrentTimeRead(0, ADC4_CS_B, 12, (int) Amp_Voltage_Set, 0, .005) + 1);	// nA
-
-									// Let the working electrodes float when not measuring
-									IO_Ext_Set(IO_EXT1_ADDR, 3, WORK_EL_SWA, 0);
-									IO_Ext_Set(IO_EXT1_ADDR, 3, WORK_EL_SWB, 0);
-									if(HIGH_RANGE)
-										IO_Ext_Set(IO_EXT2_ADDR, 3, WORK_EL_MID_CURRENT, 0);
-									DACVoltageSet(0, 0, true);
-
-									ConnectMemory(1);
+									Cl_nA_TCl[k] = ReadClnA(HIGH_RANGE, Amp_Voltage_Set, CL_TRACE_TIME);
 
 									UARTprintf("TCl raw: %d nA * 1000\n", (int) (Cl_nA_TCl[k] * 1000));
 

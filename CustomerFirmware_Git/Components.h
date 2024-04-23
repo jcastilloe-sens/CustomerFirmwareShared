@@ -1718,11 +1718,11 @@ extern void InitADC(void);
 
 extern void InitTurbidityADC(void);
 
-extern float ADCRead(uint8_t ui8Channel, int ADC_CS_PIN);
+//extern float ADCRead(uint8_t ui8Channel, int ADC_CS_PIN);
 
 extern float ADCReadAvg(uint8_t ui8Channel, int ADC_CS_PIN, int samples);
 
-extern float StreamADCChannel(uint8_t ui8Channel, int ADC_CS_PIN, int time);
+//extern float StreamADCChannel(uint8_t ui8Channel, int ADC_CS_PIN, int time);
 
 extern void ADCCurrentSet(bool state);
 

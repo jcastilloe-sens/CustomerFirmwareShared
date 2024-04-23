@@ -538,6 +538,7 @@ float * CurrentTimeRead(uint8_t ui8Channel, int ADC_CS_PIN, float seconds, int D
 	return Current;
 }
 
+#ifdef CC_CURRENT_LIMITED
 //**************************************************************************
 // Function to read in voltage on specific channel
 // Samples at ~200 SPS, max of 25 samples
@@ -794,6 +795,7 @@ float * CurrentTimeRead_CurrentLimited(uint8_t ui8Channel, int ADC_CS_PIN, float
 
 	return Current;
 }
+#endif
 
 ////**************************************************************************
 //// Function to read in voltage on specific channel
@@ -1882,6 +1884,7 @@ void CleanAmperometrics(int8_t Ref_drift, uint16_t Cal_Number, uint16_t Test_Num
 
 }
 
+#ifdef CC_CURRENT_LIMITED
 //**************************************************************************
 // Runs the cleaning procedure for all Amperometric arrays and ORP sensor
 // Parameters: 	Ref_drift; reference drift adjustment in mV
@@ -2440,6 +2443,7 @@ void CleanAmperometrics_CurrentLimited(int8_t Ref_drift, uint16_t Cal_Number, ui
 
 	DEBUG_PRINT(UARTprintf("Cleaning completed! \n");)
 }
+#endif
 
 #ifdef SWEEP_CLEAN
 //**************************************************************************
@@ -3653,57 +3657,91 @@ float MeasureConductivity(struct SolutionVals* Sols, uint8_t Test_Number)
 }
 #endif
 
-////**************************************************************************
-//// Runs amperometric sensor to get chlorine nA value
-//// Parameters:	*Range_flag; pointer to flag to set outside function
-////				Cl_nA_cutoff; the value to check for when deciding whether
-////				to switch ranges or not
-//// Outputs:		Cl_nA; nA read from chlorine senso
-////**************************************************************************
-//float ReadCl(uint8_t *Range_flag, float Cl_nA_cutoff)
-//{
-//	// Turn on short and off parallel resistor to allow large current flows
-//	IO_Ext_Set(IO_EXT2_ADDR, 3, WORK_EL_HIGH_CURRENT, 1);	// Parallel switch must be on with short switch to work
-//	IO_Ext_Set(IO_EXT2_ADDR, 2, WORK_EL_SHORT, 1);
-//	IO_Ext_Set(IO_EXT2_ADDR, 3, WORK_EL_MID_CURRENT, 1);	// Always start with wide range and adjust if necessary
-//
-//	// Set reference for amperometric mode
-//	IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWA, 1);
-//	IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWB, 1);
-//
-//	DACVoltageSet(0, 470, true);
-//
-//	// Connect all electrodes together for measuring
-//	IO_Ext_Set(IO_EXT1_ADDR, 3, WORK_EL_SWA, 1);
-//	IO_Ext_Set(IO_EXT1_ADDR, 3, WORK_EL_SWB, 1);
-//
-//	SysCtlDelay(SysCtlClockGet()/3 * 3);			// Let run 3 seconds with short to allow large current at beginning
-//	IO_Ext_Set(IO_EXT2_ADDR, 3, WORK_EL_HIGH_CURRENT, 0);
-//	IO_Ext_Set(IO_EXT2_ADDR, 2, WORK_EL_SHORT, 0);	// Turn off short switch
-//	float Cl_nA = CurrentTimeRead(0, ADC4_CS_B, 2, 470, 2, .005) * 1000000;	// nA
-//
-//	if(Cl_nA < Cl_nA_cutoff)
-//		Cl_nA = CurrentTimeRead(0, ADC4_CS_B, 10, 470, 2, .005) * 1000000;	// nA
-//	else
-//	{
-//		*Range_flag = 1;	// 0 is starting large range, 1 is small range
-//		IO_Ext_Set(IO_EXT2_ADDR, 3, WORK_EL_MID_CURRENT, 0);
-//		Cl_nA = CurrentTimeRead(0, ADC4_CS_B, 10, 470, 0, .005) * 1000000;	// nA
-//	}
-//
-//	// Let the working electrodes float when not measuring
-//	IO_Ext_Set(IO_EXT1_ADDR, 3, WORK_EL_SWA, 0);
-//	IO_Ext_Set(IO_EXT1_ADDR, 3, WORK_EL_SWB, 0);
-//	IO_Ext_Set(IO_EXT2_ADDR, 3, WORK_EL_MID_CURRENT, 0);
-//
-//	DACVoltageSet(0, 0, true);
-//
-//	// RE and CE floating
-//	IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWA, 1);		// Leave RE floating
-//	IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWB, 0);		// Leave CE floating
-//
-//	return Cl_nA;
-//}
+//**************************************************************************
+// Runs amperometric sensor to get chlorine nA value
+// Parameters:	Range; indicator of range; 1 = High Range; all others = Low Range
+//				Amp_Voltage_Set; voltage to set while  run the reaction at
+//				ui8TraceTime; the time to run sensors in seconds after the initial 3 second short time
+// Outputs:		Cl_nA; nA read from amperometric sensor
+//**************************************************************************
+float ReadClnA(uint8_t Range, float Amp_Voltage_Set, uint8_t ui8TraceTime)
+{
+	ConnectMemory(0);
+
+	float Cl_nA;
+
+#ifdef CV_MEASUREMENT
+//						int16_t Positive_Step = 1000;
+//						int16_t Negative_Step = 0;
+
+	CVCleaning(800, -400, 100, 1, 1);
+#endif
+
+	// Read ADC here to make sure it is working, I've seen ADC have problem during Cl read causing analog board to reset which threw off
+	// Cl reading, by reading here hopefully we catch the problem and fix it before doing anything to the amperometric arrays
+	ADCReadAvg(0, ADC4_CS_B, 5);
+
+	// Turn on short and off parallel resistor to allow large current flows
+	IO_Ext_Set(IO_EXT2_ADDR, 3, WORK_EL_HIGH_CURRENT, 1);	// Parallel switch must be on with short switch to work
+	IO_Ext_Set(IO_EXT2_ADDR, 2, WORK_EL_SHORT, 1);
+	if(Range == 1)
+		IO_Ext_Set(IO_EXT2_ADDR, 3, WORK_EL_MID_CURRENT, 1);
+
+	// Set reference for amperometric mode
+	IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWA, 1);
+	IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWB, 1);
+
+	DACVoltageSet(0, Amp_Voltage_Set, true);
+
+	// Connect all electrodes together for measuring
+	IO_Ext_Set(IO_EXT1_ADDR, 3, WORK_EL_SWA, 1);
+	IO_Ext_Set(IO_EXT1_ADDR, 3, WORK_EL_SWB, 1);
+
+#ifdef READ_REF_GUARD
+	ReadRefGuard(3);
+//						userDelay(3000, 1);	// Delay 3 seconds to let large current flow through before switching in reading resistor
+#else
+	userDelay(3000, 1);	// Delay 3 seconds to let large current flow through before switching in reading resistor
+#endif
+
+	IO_Ext_Set(IO_EXT2_ADDR, 3, WORK_EL_HIGH_CURRENT, 0);
+	IO_Ext_Set(IO_EXT2_ADDR, 2, WORK_EL_SHORT, 0);	// Turn off short switch
+
+#ifdef READ_REF_GUARD
+	// Read Ref until last 1 second then read
+	ReadRefGuard(CL_TRACE_TIME - 1);
+//						userDelay(11000, 1);	// Delay 3 seconds to let large current flow through before switching in reading resistor
+	if(HIGH_RANGE)
+		Cl_nA_FCl = *(CurrentTimeRead(0, ADC4_CS_B, 1, (int) Amp_Voltage_Set, 2, .1) + 1);	// nA
+	else
+		Cl_nA_FCl = *(CurrentTimeRead(0, ADC4_CS_B, 1, (int) Amp_Voltage_Set, 0, .1) + 1);	// nA
+
+#else
+#ifdef PRINT_CURRENT
+	if(Range == 1)
+		Cl_nA = *(CurrentTimeRead(0, ADC4_CS_B, ui8TraceTime, (int) Amp_Voltage_Set, 2, .1) + 1);	// nA
+	else
+		Cl_nA = *(CurrentTimeRead(0, ADC4_CS_B, ui8TraceTime, (int) Amp_Voltage_Set, 0, .1) + 1);	// nA
+#else
+	if(HIGH_RANGE)
+		Cl_nA_FCl = *(CurrentTimeRead(0, ADC4_CS_B, CL_TRACE_TIME, (int) Amp_Voltage_Set, 2, .005) + 1);	// nA
+	else
+		Cl_nA_FCl = *(CurrentTimeRead(0, ADC4_CS_B, CL_TRACE_TIME, (int) Amp_Voltage_Set, 0, .005) + 1);	// nA
+#endif
+#endif
+
+
+	// Let the working electrodes float when not measuring
+	IO_Ext_Set(IO_EXT1_ADDR, 3, WORK_EL_SWA, 0);
+	IO_Ext_Set(IO_EXT1_ADDR, 3, WORK_EL_SWB, 0);
+	if(Range == 1)
+		IO_Ext_Set(IO_EXT2_ADDR, 3, WORK_EL_MID_CURRENT, 0);
+	DACVoltageSet(0, 0, true);
+
+	ConnectMemory(1);
+
+	return Cl_nA;
+}
 
 ////**************************************************************************
 //// Calculates the current flowing through the ORP sensors
@@ -4531,7 +4569,7 @@ void CleanAmperometrics_CurrentLimited_CCOROnly(int8_t Ref_drift, uint16_t Cal_N
 }
 #endif
 
-#ifdef TESTING_MODE
+#ifdef READ_REF_GUARD
 //**************************************************************************
 // Read voltage on reference guard, Ondrej wants to make sure the reference
 // is stable during the chlorine measurement

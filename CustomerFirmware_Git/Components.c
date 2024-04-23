@@ -1466,83 +1466,83 @@ void InitTurbidityADC(void)
 	}
 }
 
-//**************************************************************************
-// Function to read in voltage on specific channel
-// Parameters:	Channel; [0,6] 	0: All amperometrics
-//								1: Amp 1
-//								2: Amp 2... etc
-//				ADC_CS_PIN; ADC1_CS_B, ADC2_CS_B, or ADC4_CS_B
-// Outputs:		fVoltage; Voltage coming into specified channel in mV
-//**************************************************************************
-float ADCRead(uint8_t ui8Channel, int ADC_CS_PIN)
-{
-	while(SSIBusy(SSI1_BASE)){} // Wait for SSI to finish transferring before raising SS pin
-
-	// Set SPI communication to capture on rising edge of clock (DAC captures on falling edge)
-	SSIDisable(SSI1_BASE);
-	SSIConfigSetExpClk(SSI1_BASE, SysCtlClockGet(), SSI_FRF_MOTO_MODE_0, SSI_MODE_MASTER, SPI_CLOCK, 8);
-	SSIEnable(SSI1_BASE);
-
-	SysCtlDelay(2000);
-
-	uint8_t ADC_Address = 0x10; // Instruction 1, must be sent whenever URA Changes
-	uint8_t URA = 0x01; // Upper Register Address; Channel Scan Register and ADC_DOUT register have same URA
-	uint8_t LRA_ch_scan_w = 0x0F; // Lower Register Address; write 1 byte to channel scan register
-	uint8_t LRA_ch_scan_r = 0x8F; // Read 1 byte from channel scan register
-	uint8_t LRA_ADC_DOUT = 0xAA; // Read 2 bytes from ADC_DOUT registers
-
-	uint8_t ui8Channel_Tx = (ui8Channel | ((ui8Channel) << 3)); // Set first and last channel to scan
-
-	uint32_t ui32ADC_MSB; // Most Significant byte of ADC_DOUT
-	uint32_t ui32ADC_LSB; // Least Signficant byte of ADC_DOUT
-	int16_t ADC_DOUT = 0; // signed 16 bit data assembled from two ADC_DOUT registers
-	uint32_t ui32Channel_Rx = ui8Channel_Tx + 1;
-
-	// Random data points seem really far off, as if the channel wasn't changed successfully and wrong channel was being read
-	// Created loop to verify the channel register was updated correctly; JC 2/9/2018
-	while(ui8Channel_Tx != ui32Channel_Rx)
-	{
-		// Set ADC we are using into active mode
-		SPISend(SSI1_BASE, 1, ADC_CS_PIN, 0, 4, 0x10, 0x00, 0x08, 0x00); // Register 0x08, 0x3 stand-by mode, 0x0 active mode
-
-		// Write the channel scan register to set which channel to read
-		SPISend(SSI1_BASE, 1, ADC_CS_PIN, 0, 4, ADC_Address, URA, LRA_ch_scan_w, ui8Channel_Tx); // Set channel scan register
-		SPISend(SSI1_BASE, 1, ADC_CS_PIN, 0, 4, 0x10, 0x00, 0x0B, 0x01); // Send command to restart conversion
-		SysCtlDelay(30000); // Delay so channel scan register can update
-
-		// Must read channel scan register after setting it
-		// Assume this is to update values as register is buffered
-		// Don't actually know why this is required
-		SPISend(SSI1_BASE, 1, ADC_CS_PIN, 0, 4, ADC_Address, URA, LRA_ch_scan_r, 0x00); // Read Channel Scan Register
-		SSIDataGet(SSI1_BASE, (uint32_t *) &ui32Channel_Rx);
-		SSIDataGet(SSI1_BASE, (uint32_t *) &ui32Channel_Rx);
-		SSIDataGet(SSI1_BASE, (uint32_t *) &ui32Channel_Rx);
-		SSIDataGet(SSI1_BASE, (uint32_t *) &ui32Channel_Rx);
-	}
-
-	// Read from ADC_DOUT registers
-	SPISend(SSI1_BASE, 1, ADC_CS_PIN, 0, 3, LRA_ADC_DOUT, 0x00, 0x00); // Read 2 bytes from ADC_DOUT registers
-	while(SSIBusy(SSI1_BASE)){} // Wait for SSI to finish transferring before raising SS pin
-	SysCtlDelay(2000);
-	SSIDataGet(SSI1_BASE, &ui32ADC_MSB); // First byte received is junk, data overwritten on next line
-	SSIDataGet(SSI1_BASE, &ui32ADC_MSB); // Save MSB
-	SSIDataGet(SSI1_BASE, &ui32ADC_LSB); // Save LSB
-
-	// Set ADC back into stand-by mode
-	SPISend(SSI1_BASE, 1, ADC_CS_PIN, 0, 4, 0x10, 0x00, 0x08, 0x03); // Register 0x08, 0x3 stand-by mode, 0x0 active mode
-
-	ADC_DOUT |= (ui32ADC_MSB << 8); // Set MSB
-	ADC_DOUT |= ui32ADC_LSB; // Set LSB
-
-//	float VREFP = 3; // Positive reference voltage
-//	float VREFN = 0; // Negative reference voltage
-//	float GAIN = 1; // by default
-//	float VINN = 1.5; // Compare all channels to incoming 1.5 reference voltage
-//	float fVoltage = (ADC_DOUT * (VREFP - VREFN) / pow(2,15))/GAIN + VINN;
-	float fVoltage = (ADC_DOUT * (1.5) / 32768.0) + 1.5; // Convert ADC_DOUT data into voltage
-
-	return (fVoltage * 1000);
-}
+////**************************************************************************
+//// Function to read in voltage on specific channel
+//// Parameters:	Channel; [0,6] 	0: All amperometrics
+////								1: Amp 1
+////								2: Amp 2... etc
+////				ADC_CS_PIN; ADC1_CS_B, ADC2_CS_B, or ADC4_CS_B
+//// Outputs:		fVoltage; Voltage coming into specified channel in mV
+////**************************************************************************
+//float ADCRead(uint8_t ui8Channel, int ADC_CS_PIN)
+//{
+//	while(SSIBusy(SSI1_BASE)){} // Wait for SSI to finish transferring before raising SS pin
+//
+//	// Set SPI communication to capture on rising edge of clock (DAC captures on falling edge)
+//	SSIDisable(SSI1_BASE);
+//	SSIConfigSetExpClk(SSI1_BASE, SysCtlClockGet(), SSI_FRF_MOTO_MODE_0, SSI_MODE_MASTER, SPI_CLOCK, 8);
+//	SSIEnable(SSI1_BASE);
+//
+//	SysCtlDelay(2000);
+//
+//	uint8_t ADC_Address = 0x10; // Instruction 1, must be sent whenever URA Changes
+//	uint8_t URA = 0x01; // Upper Register Address; Channel Scan Register and ADC_DOUT register have same URA
+//	uint8_t LRA_ch_scan_w = 0x0F; // Lower Register Address; write 1 byte to channel scan register
+//	uint8_t LRA_ch_scan_r = 0x8F; // Read 1 byte from channel scan register
+//	uint8_t LRA_ADC_DOUT = 0xAA; // Read 2 bytes from ADC_DOUT registers
+//
+//	uint8_t ui8Channel_Tx = (ui8Channel | ((ui8Channel) << 3)); // Set first and last channel to scan
+//
+//	uint32_t ui32ADC_MSB; // Most Significant byte of ADC_DOUT
+//	uint32_t ui32ADC_LSB; // Least Signficant byte of ADC_DOUT
+//	int16_t ADC_DOUT = 0; // signed 16 bit data assembled from two ADC_DOUT registers
+//	uint32_t ui32Channel_Rx = ui8Channel_Tx + 1;
+//
+//	// Random data points seem really far off, as if the channel wasn't changed successfully and wrong channel was being read
+//	// Created loop to verify the channel register was updated correctly; JC 2/9/2018
+//	while(ui8Channel_Tx != ui32Channel_Rx)
+//	{
+//		// Set ADC we are using into active mode
+//		SPISend(SSI1_BASE, 1, ADC_CS_PIN, 0, 4, 0x10, 0x00, 0x08, 0x00); // Register 0x08, 0x3 stand-by mode, 0x0 active mode
+//
+//		// Write the channel scan register to set which channel to read
+//		SPISend(SSI1_BASE, 1, ADC_CS_PIN, 0, 4, ADC_Address, URA, LRA_ch_scan_w, ui8Channel_Tx); // Set channel scan register
+//		SPISend(SSI1_BASE, 1, ADC_CS_PIN, 0, 4, 0x10, 0x00, 0x0B, 0x01); // Send command to restart conversion
+//		SysCtlDelay(30000); // Delay so channel scan register can update
+//
+//		// Must read channel scan register after setting it
+//		// Assume this is to update values as register is buffered
+//		// Don't actually know why this is required
+//		SPISend(SSI1_BASE, 1, ADC_CS_PIN, 0, 4, ADC_Address, URA, LRA_ch_scan_r, 0x00); // Read Channel Scan Register
+//		SSIDataGet(SSI1_BASE, (uint32_t *) &ui32Channel_Rx);
+//		SSIDataGet(SSI1_BASE, (uint32_t *) &ui32Channel_Rx);
+//		SSIDataGet(SSI1_BASE, (uint32_t *) &ui32Channel_Rx);
+//		SSIDataGet(SSI1_BASE, (uint32_t *) &ui32Channel_Rx);
+//	}
+//
+//	// Read from ADC_DOUT registers
+//	SPISend(SSI1_BASE, 1, ADC_CS_PIN, 0, 3, LRA_ADC_DOUT, 0x00, 0x00); // Read 2 bytes from ADC_DOUT registers
+//	while(SSIBusy(SSI1_BASE)){} // Wait for SSI to finish transferring before raising SS pin
+//	SysCtlDelay(2000);
+//	SSIDataGet(SSI1_BASE, &ui32ADC_MSB); // First byte received is junk, data overwritten on next line
+//	SSIDataGet(SSI1_BASE, &ui32ADC_MSB); // Save MSB
+//	SSIDataGet(SSI1_BASE, &ui32ADC_LSB); // Save LSB
+//
+//	// Set ADC back into stand-by mode
+//	SPISend(SSI1_BASE, 1, ADC_CS_PIN, 0, 4, 0x10, 0x00, 0x08, 0x03); // Register 0x08, 0x3 stand-by mode, 0x0 active mode
+//
+//	ADC_DOUT |= (ui32ADC_MSB << 8); // Set MSB
+//	ADC_DOUT |= ui32ADC_LSB; // Set LSB
+//
+////	float VREFP = 3; // Positive reference voltage
+////	float VREFN = 0; // Negative reference voltage
+////	float GAIN = 1; // by default
+////	float VINN = 1.5; // Compare all channels to incoming 1.5 reference voltage
+////	float fVoltage = (ADC_DOUT * (VREFP - VREFN) / pow(2,15))/GAIN + VINN;
+//	float fVoltage = (ADC_DOUT * (1.5) / 32768.0) + 1.5; // Convert ADC_DOUT data into voltage
+//
+//	return (fVoltage * 1000);
+//}
 
 //**************************************************************************
 // Function to read in voltage on specific channel
@@ -1736,208 +1736,208 @@ float ADCReadAvg(uint8_t ui8Channel, int ADC_CS_PIN, int samples)
 	return V_avg;
 }
 
-//**************************************************************************
-// Function to read in voltage on specific channel, continuously while printing
-// out to UART, used to check for noise
-// Samples at ~200 SPS, max of 20 samples
-// Parameters:	Channel; [0,6] 	0: All amperometrics
-//								1: Amp 1
-//								2: Amp 2... etc
-//				ADC_CS_PIN; ADC1_CS_B, ADC2_CS_B, or ADC4_CS_B
-//				time; how long to stream channel for
-// Outputs:		last voltage read
-//**************************************************************************
-float StreamADCChannel(uint8_t ui8Channel, int ADC_CS_PIN, int time)
-{
-	float fVoltage;
-
-	uint8_t ADC_Address = 0x10; // Instruction 1, must be sent whenever URA Changes
-	uint8_t URA = 0x01; // Upper Register Address; Channel Scan Register and ADC_DOUT register have same URA
-	uint8_t LRA_ch_scan_w = 0x0F; // Lower Register Address; write 1 byte to channel scan register
-	uint8_t LRA_ch_scan_r = 0x8F; // Read 1 byte from channel scan register
-	uint8_t LRA_ADC_DOUT = 0xAA; // Read 2 bytes from ADC_DOUT registers
-
-	uint8_t ui8Channel_Tx = (ui8Channel | ((ui8Channel) << 3)); // Set first and last channel to scan
-
-	uint32_t ui32ADC_MSB; // Most Significant byte of ADC_DOUT
-	uint32_t ui32ADC_LSB; // Least Signficant byte of ADC_DOUT
-	int16_t ADC_DOUT = 0; // signed 16 bit data assembled from two ADC_DOUT registers
-	uint32_t ui32Channel_Rx = ~ui8Channel_Tx;
-
-	uint8_t counter = 0;
-
-	while(SSIBusy(SSI1_BASE)){} // Wait for SSI to finish transferring before raising SS pin
-
-	// Set SPI communication to capture on rising edge of clock (DAC captures on falling edge)
-	SSIDisable(SSI1_BASE);
-	SSIConfigSetExpClk(SSI1_BASE, SysCtlClockGet(), SSI_FRF_MOTO_MODE_0, SSI_MODE_MASTER, SPI_CLOCK, 8);
-	SSIEnable(SSI1_BASE);
-
-	SysCtlDelay(2000);
-
-	// Random data points seem really far off, as if the channel wasn't changed successfully and wrong channel was being read
-	// Created loop to verify the channel register was updated correctly
-	while(ui8Channel_Tx != ui32Channel_Rx && counter <= 15)
-	{
-		// Set ADC we are using into active mode
-		SPISend(SSI1_BASE, 1, ADC_CS_PIN, 0, 4, 0x10, 0x00, 0x08, 0x00); // Register 0x08, 0x3 stand-by mode, 0x0 active mode
-
-		// Write the channel scan register to set which channel to read
-		SPISend(SSI1_BASE, 1, ADC_CS_PIN, 0, 4, ADC_Address, URA, LRA_ch_scan_w, ui8Channel_Tx); // Set channel scan register
-		SPISend(SSI1_BASE, 1, ADC_CS_PIN, 0, 4, 0x10, 0x00, 0x0B, 0x01); // Send command to restart conversion
-		SysCtlDelay(30000); // Delay so channel scan register can update
-
-//		UARTprintf("Reading back Channel \n");
-
-		// Must read channel scan register after setting it
-		// Assume this is to update values as register is buffered
-		// Don't actually know why this is required
-		SPISend(SSI1_BASE, 1, ADC_CS_PIN, 0, 4, ADC_Address, URA, LRA_ch_scan_r, 0x00); // Read Channel Scan Register
-		SSIDataGet(SSI1_BASE, (uint32_t *) &ui32Channel_Rx);
-		SSIDataGet(SSI1_BASE, (uint32_t *) &ui32Channel_Rx);
-		SSIDataGet(SSI1_BASE, (uint32_t *) &ui32Channel_Rx);
-		SSIDataGet(SSI1_BASE, (uint32_t *) &ui32Channel_Rx);
-
-		if(counter < 5)
-			counter++;
-		else if(counter == 5)
-		{
-			DEBUG_PRINT(UARTprintf("Tried writing ADC channel 5 times, reinitializing all ADCs!\n");)
-
-			InitADC();
-			counter++;
-		}
-		else if(counter < 10)
-			counter++;
-		else if(counter == 10)
-		{
-			DEBUG_PRINT(
-			UARTprintf("Tried writing ADC channel 10 times, failed everytime! \n");
-			UARTprintf("Writing: 0x%x, receiving: 0x%x\n", ui8Channel_Tx, ui32Channel_Rx);
-			UARTprintf("Resetting analog board!\n");
-			)
-			counter++;
-
-			AnalogOff();
-
-			userDelay(1000, 1);
-
-			SysCtlDelay(2000);
-
-			InitAnalog();
-
-			// Set SPI communication to capture on rising edge of clock (DAC captures on falling edge)
-			SSIDisable(SSI1_BASE);
-			SSIConfigSetExpClk(SSI1_BASE, SysCtlClockGet(), SSI_FRF_MOTO_MODE_0, SSI_MODE_MASTER, SPI_CLOCK, 8);
-			SSIEnable(SSI1_BASE);
-
-			SysCtlDelay(2000);
-		}
-		else if(counter < 15)
-			counter++;
-		else if(counter == 15)
-		{
-			counter++;
-			DEBUG_PRINT(UARTprintf("Writing: 0x%x, receiving: 0x%x\n", ui8Channel_Tx, ui32Channel_Rx);)
-
-			if(ADC_CS_PIN == ADC1_CS_B)
-			{
-				DEBUG_PRINT(UARTprintf("ADC 1 didn't program channel scan register correctly! \n");)
-
-				gui32Error |= ADC1_FAIL;
-				update_Error();
-			}
-			if(ADC_CS_PIN == ADC2_CS_B)
-			{
-				DEBUG_PRINT(UARTprintf("ADC 2 didn't program channel scan register correctly! \n");)
-
-				gui32Error |= ADC2_FAIL;
-				update_Error();
-			}
-			if(ADC_CS_PIN == ADC4_CS_B)
-			{
-				DEBUG_PRINT(UARTprintf("ADC 4 didn't program channel scan register correctly! \n");)
-
-				gui32Error |= ADC4_FAIL;
-				update_Error();
-			}
-
-			DEBUG_PRINT(
-			uint8_t ui8PinCheck = I2CReceive(I2C0_BASE, IO_EXT1_ADDR, 2, 1);
-			UARTprintf("IO Extender 1 reg 2: %x, global: %x\n", ui8PinCheck, gui8IO_Ext1_Reg2);
-			ui8PinCheck = I2CReceive(I2C0_BASE, IO_EXT1_ADDR, 3, 1);
-			UARTprintf("IO Extender 1 reg 3: %x, global: %x\n", ui8PinCheck, gui8IO_Ext1_Reg3);
-			ui8PinCheck = I2CReceive(I2C0_BASE, IO_EXT2_ADDR, 2, 1);
-			UARTprintf("IO Extender 2 reg 2: %x, global: %x\n", ui8PinCheck, gui8IO_Ext2_Reg2);
-			ui8PinCheck = I2CReceive(I2C0_BASE, IO_EXT2_ADDR, 3, 1);
-			UARTprintf("IO Extender 2 reg 3: %x, global: %x\n", ui8PinCheck, gui8IO_Ext2_Reg3);
-#ifdef MCU_ZXR
-			UARTprintf("LED IO Ext CS_B: %x\n", GPIOPinRead(IO_LED_EXT_CS_B_BASE, IO_LED_EXT_CS_B_PIN));
-#else
-			UARTprintf("LED IO Ext CS_B: %x\n", GPIOPinRead(GPIO_PORTD_BASE, GPIO_PIN_1));
-#endif
-			)
-		}
-	}
-
-//	float V_sum = 0;	// Sum of all voltages read
-
-	// Read from ADC_DOUT registers one time before before using the data for averaging
-	// Ondrej found this chip often gave incorrect value for first sample so throw away this first point
-	SPISend(SSI1_BASE, 1, ADC_CS_PIN, 0, 3, LRA_ADC_DOUT, 0x00, 0x00); // Read 2 bytes from ADC_DOUT registers
-	while(SSIBusy(SSI1_BASE)){} // Wait for SSI to finish transferring before raising SS pin
-	SSIDataGet(SSI1_BASE, &ui32ADC_MSB); // First byte received is junk, data overwritten on next line
-	SSIDataGet(SSI1_BASE, &ui32ADC_MSB); // Save MSB
-	SSIDataGet(SSI1_BASE, &ui32ADC_LSB); // Save LSB
-
-	SysCtlDelay(SysCtlClockGet()/3 * .005);
-
-	g_TimerInterruptFlag = 0;
-	TimerLoadSet(TIMER0_BASE, TIMER_A, (time * SysCtlClockGet()));		// Timer set
-	TimerEnable(TIMER0_BASE, TIMER_A);
-
-	DEBUG_PRINT(UARTprintf("Voltage at ISE (not ADC) (uV):\n");)
-	uint32_t ui32ADC_Done = 0xFF;
-	uint8_t LRA_ADC_DOUT_check = 0xE8;	// Start reading at ADC Data Available register to check if the data coming out is new
-	while(g_TimerInterruptFlag == 0)
-	{
-		// Read from ADC_DOUT registers
-		SPISend(SSI1_BASE, 1, ADC_CS_PIN, 0, 5, LRA_ADC_DOUT_check, 0x00, 0x00, 0, 0); // Read 2 bytes from ADC_DOUT registers
-		while(SSIBusy(SSI1_BASE)){} // Wait for SSI to finish transferring before raising SS pin
-		SSIDataGet(SSI1_BASE, &ui32ADC_MSB); // First byte received is junk, data overwritten on next line
-		SSIDataGet(SSI1_BASE, &ui32ADC_Done); // ADC Data Availabe register
-		SSIDataGet(SSI1_BASE, &ui32ADC_MSB); // Senosr Diagnostic Flags register
-		SSIDataGet(SSI1_BASE, &ui32ADC_MSB); // Save MSB
-		SSIDataGet(SSI1_BASE, &ui32ADC_LSB); // Save LSB
-
-		if(ui32ADC_Done != 0xFF)
-		{
-			ADC_DOUT = 0;
-			ADC_DOUT |= (ui32ADC_MSB << 8); // Set MSB
-			ADC_DOUT |= ui32ADC_LSB; // Set LSB
-
-			fVoltage = (ADC_DOUT * (1500) / 32768.0) + 1500; // Convert ADC_DOUT data into voltage
-			//		V_sum += fVoltage;
-			DEBUG_PRINT(UARTprintf("%d\n", (int) ((2 * fVoltage - 3000)/5 * 1000));)
-		}
-
-//		samples--;
+////**************************************************************************
+//// Function to read in voltage on specific channel, continuously while printing
+//// out to UART, used to check for noise
+//// Samples at ~200 SPS, max of 20 samples
+//// Parameters:	Channel; [0,6] 	0: All amperometrics
+////								1: Amp 1
+////								2: Amp 2... etc
+////				ADC_CS_PIN; ADC1_CS_B, ADC2_CS_B, or ADC4_CS_B
+////				time; how long to stream channel for
+//// Outputs:		last voltage read
+////**************************************************************************
+//float StreamADCChannel(uint8_t ui8Channel, int ADC_CS_PIN, int time)
+//{
+//	float fVoltage;
 //
-////		UARTprintf("%d\t", (int) (fVoltage * 1000));
+//	uint8_t ADC_Address = 0x10; // Instruction 1, must be sent whenever URA Changes
+//	uint8_t URA = 0x01; // Upper Register Address; Channel Scan Register and ADC_DOUT register have same URA
+//	uint8_t LRA_ch_scan_w = 0x0F; // Lower Register Address; write 1 byte to channel scan register
+//	uint8_t LRA_ch_scan_r = 0x8F; // Read 1 byte from channel scan register
+//	uint8_t LRA_ADC_DOUT = 0xAA; // Read 2 bytes from ADC_DOUT registers
 //
-//		if(samples > 0)
-//			SysCtlDelay(SysCtlClockGet()/3 * .005);
-	}
-//	UARTprintf("\n");
-
-	// Set ADC back into stand-by mode
-	SPISend(SSI1_BASE, 1, ADC_CS_PIN, 0, 4, 0x10, 0x00, 0x08, 0x03); // Register 0x08, 0x3 stand-by mode, 0x0 active mode
-
-//	float V_avg = V_sum / total_samples;
-//	UARTprintf("Average: \t %d \t mV \n", (int) V_avg);
-
-	return fVoltage;
-}
+//	uint8_t ui8Channel_Tx = (ui8Channel | ((ui8Channel) << 3)); // Set first and last channel to scan
+//
+//	uint32_t ui32ADC_MSB; // Most Significant byte of ADC_DOUT
+//	uint32_t ui32ADC_LSB; // Least Signficant byte of ADC_DOUT
+//	int16_t ADC_DOUT = 0; // signed 16 bit data assembled from two ADC_DOUT registers
+//	uint32_t ui32Channel_Rx = ~ui8Channel_Tx;
+//
+//	uint8_t counter = 0;
+//
+//	while(SSIBusy(SSI1_BASE)){} // Wait for SSI to finish transferring before raising SS pin
+//
+//	// Set SPI communication to capture on rising edge of clock (DAC captures on falling edge)
+//	SSIDisable(SSI1_BASE);
+//	SSIConfigSetExpClk(SSI1_BASE, SysCtlClockGet(), SSI_FRF_MOTO_MODE_0, SSI_MODE_MASTER, SPI_CLOCK, 8);
+//	SSIEnable(SSI1_BASE);
+//
+//	SysCtlDelay(2000);
+//
+//	// Random data points seem really far off, as if the channel wasn't changed successfully and wrong channel was being read
+//	// Created loop to verify the channel register was updated correctly
+//	while(ui8Channel_Tx != ui32Channel_Rx && counter <= 15)
+//	{
+//		// Set ADC we are using into active mode
+//		SPISend(SSI1_BASE, 1, ADC_CS_PIN, 0, 4, 0x10, 0x00, 0x08, 0x00); // Register 0x08, 0x3 stand-by mode, 0x0 active mode
+//
+//		// Write the channel scan register to set which channel to read
+//		SPISend(SSI1_BASE, 1, ADC_CS_PIN, 0, 4, ADC_Address, URA, LRA_ch_scan_w, ui8Channel_Tx); // Set channel scan register
+//		SPISend(SSI1_BASE, 1, ADC_CS_PIN, 0, 4, 0x10, 0x00, 0x0B, 0x01); // Send command to restart conversion
+//		SysCtlDelay(30000); // Delay so channel scan register can update
+//
+////		UARTprintf("Reading back Channel \n");
+//
+//		// Must read channel scan register after setting it
+//		// Assume this is to update values as register is buffered
+//		// Don't actually know why this is required
+//		SPISend(SSI1_BASE, 1, ADC_CS_PIN, 0, 4, ADC_Address, URA, LRA_ch_scan_r, 0x00); // Read Channel Scan Register
+//		SSIDataGet(SSI1_BASE, (uint32_t *) &ui32Channel_Rx);
+//		SSIDataGet(SSI1_BASE, (uint32_t *) &ui32Channel_Rx);
+//		SSIDataGet(SSI1_BASE, (uint32_t *) &ui32Channel_Rx);
+//		SSIDataGet(SSI1_BASE, (uint32_t *) &ui32Channel_Rx);
+//
+//		if(counter < 5)
+//			counter++;
+//		else if(counter == 5)
+//		{
+//			DEBUG_PRINT(UARTprintf("Tried writing ADC channel 5 times, reinitializing all ADCs!\n");)
+//
+//			InitADC();
+//			counter++;
+//		}
+//		else if(counter < 10)
+//			counter++;
+//		else if(counter == 10)
+//		{
+//			DEBUG_PRINT(
+//			UARTprintf("Tried writing ADC channel 10 times, failed everytime! \n");
+//			UARTprintf("Writing: 0x%x, receiving: 0x%x\n", ui8Channel_Tx, ui32Channel_Rx);
+//			UARTprintf("Resetting analog board!\n");
+//			)
+//			counter++;
+//
+//			AnalogOff();
+//
+//			userDelay(1000, 1);
+//
+//			SysCtlDelay(2000);
+//
+//			InitAnalog();
+//
+//			// Set SPI communication to capture on rising edge of clock (DAC captures on falling edge)
+//			SSIDisable(SSI1_BASE);
+//			SSIConfigSetExpClk(SSI1_BASE, SysCtlClockGet(), SSI_FRF_MOTO_MODE_0, SSI_MODE_MASTER, SPI_CLOCK, 8);
+//			SSIEnable(SSI1_BASE);
+//
+//			SysCtlDelay(2000);
+//		}
+//		else if(counter < 15)
+//			counter++;
+//		else if(counter == 15)
+//		{
+//			counter++;
+//			DEBUG_PRINT(UARTprintf("Writing: 0x%x, receiving: 0x%x\n", ui8Channel_Tx, ui32Channel_Rx);)
+//
+//			if(ADC_CS_PIN == ADC1_CS_B)
+//			{
+//				DEBUG_PRINT(UARTprintf("ADC 1 didn't program channel scan register correctly! \n");)
+//
+//				gui32Error |= ADC1_FAIL;
+//				update_Error();
+//			}
+//			if(ADC_CS_PIN == ADC2_CS_B)
+//			{
+//				DEBUG_PRINT(UARTprintf("ADC 2 didn't program channel scan register correctly! \n");)
+//
+//				gui32Error |= ADC2_FAIL;
+//				update_Error();
+//			}
+//			if(ADC_CS_PIN == ADC4_CS_B)
+//			{
+//				DEBUG_PRINT(UARTprintf("ADC 4 didn't program channel scan register correctly! \n");)
+//
+//				gui32Error |= ADC4_FAIL;
+//				update_Error();
+//			}
+//
+//			DEBUG_PRINT(
+//			uint8_t ui8PinCheck = I2CReceive(I2C0_BASE, IO_EXT1_ADDR, 2, 1);
+//			UARTprintf("IO Extender 1 reg 2: %x, global: %x\n", ui8PinCheck, gui8IO_Ext1_Reg2);
+//			ui8PinCheck = I2CReceive(I2C0_BASE, IO_EXT1_ADDR, 3, 1);
+//			UARTprintf("IO Extender 1 reg 3: %x, global: %x\n", ui8PinCheck, gui8IO_Ext1_Reg3);
+//			ui8PinCheck = I2CReceive(I2C0_BASE, IO_EXT2_ADDR, 2, 1);
+//			UARTprintf("IO Extender 2 reg 2: %x, global: %x\n", ui8PinCheck, gui8IO_Ext2_Reg2);
+//			ui8PinCheck = I2CReceive(I2C0_BASE, IO_EXT2_ADDR, 3, 1);
+//			UARTprintf("IO Extender 2 reg 3: %x, global: %x\n", ui8PinCheck, gui8IO_Ext2_Reg3);
+//#ifdef MCU_ZXR
+//			UARTprintf("LED IO Ext CS_B: %x\n", GPIOPinRead(IO_LED_EXT_CS_B_BASE, IO_LED_EXT_CS_B_PIN));
+//#else
+//			UARTprintf("LED IO Ext CS_B: %x\n", GPIOPinRead(GPIO_PORTD_BASE, GPIO_PIN_1));
+//#endif
+//			)
+//		}
+//	}
+//
+////	float V_sum = 0;	// Sum of all voltages read
+//
+//	// Read from ADC_DOUT registers one time before before using the data for averaging
+//	// Ondrej found this chip often gave incorrect value for first sample so throw away this first point
+//	SPISend(SSI1_BASE, 1, ADC_CS_PIN, 0, 3, LRA_ADC_DOUT, 0x00, 0x00); // Read 2 bytes from ADC_DOUT registers
+//	while(SSIBusy(SSI1_BASE)){} // Wait for SSI to finish transferring before raising SS pin
+//	SSIDataGet(SSI1_BASE, &ui32ADC_MSB); // First byte received is junk, data overwritten on next line
+//	SSIDataGet(SSI1_BASE, &ui32ADC_MSB); // Save MSB
+//	SSIDataGet(SSI1_BASE, &ui32ADC_LSB); // Save LSB
+//
+//	SysCtlDelay(SysCtlClockGet()/3 * .005);
+//
+//	g_TimerInterruptFlag = 0;
+//	TimerLoadSet(TIMER0_BASE, TIMER_A, (time * SysCtlClockGet()));		// Timer set
+//	TimerEnable(TIMER0_BASE, TIMER_A);
+//
+//	DEBUG_PRINT(UARTprintf("Voltage at ISE (not ADC) (uV):\n");)
+//	uint32_t ui32ADC_Done = 0xFF;
+//	uint8_t LRA_ADC_DOUT_check = 0xE8;	// Start reading at ADC Data Available register to check if the data coming out is new
+//	while(g_TimerInterruptFlag == 0)
+//	{
+//		// Read from ADC_DOUT registers
+//		SPISend(SSI1_BASE, 1, ADC_CS_PIN, 0, 5, LRA_ADC_DOUT_check, 0x00, 0x00, 0, 0); // Read 2 bytes from ADC_DOUT registers
+//		while(SSIBusy(SSI1_BASE)){} // Wait for SSI to finish transferring before raising SS pin
+//		SSIDataGet(SSI1_BASE, &ui32ADC_MSB); // First byte received is junk, data overwritten on next line
+//		SSIDataGet(SSI1_BASE, &ui32ADC_Done); // ADC Data Availabe register
+//		SSIDataGet(SSI1_BASE, &ui32ADC_MSB); // Senosr Diagnostic Flags register
+//		SSIDataGet(SSI1_BASE, &ui32ADC_MSB); // Save MSB
+//		SSIDataGet(SSI1_BASE, &ui32ADC_LSB); // Save LSB
+//
+//		if(ui32ADC_Done != 0xFF)
+//		{
+//			ADC_DOUT = 0;
+//			ADC_DOUT |= (ui32ADC_MSB << 8); // Set MSB
+//			ADC_DOUT |= ui32ADC_LSB; // Set LSB
+//
+//			fVoltage = (ADC_DOUT * (1500) / 32768.0) + 1500; // Convert ADC_DOUT data into voltage
+//			//		V_sum += fVoltage;
+//			DEBUG_PRINT(UARTprintf("%d\n", (int) ((2 * fVoltage - 3000)/5 * 1000));)
+//		}
+//
+////		samples--;
+////
+//////		UARTprintf("%d\t", (int) (fVoltage * 1000));
+////
+////		if(samples > 0)
+////			SysCtlDelay(SysCtlClockGet()/3 * .005);
+//	}
+////	UARTprintf("\n");
+//
+//	// Set ADC back into stand-by mode
+//	SPISend(SSI1_BASE, 1, ADC_CS_PIN, 0, 4, 0x10, 0x00, 0x08, 0x03); // Register 0x08, 0x3 stand-by mode, 0x0 active mode
+//
+////	float V_avg = V_sum / total_samples;
+////	UARTprintf("Average: \t %d \t mV \n", (int) V_avg);
+//
+//	return fVoltage;
+//}
 
 //**************************************************************************
 // Function to control current source for temperature sensor outputs 1000 uA

@@ -490,7 +490,7 @@ extern float Calc_pNH4(float NH4_EEP_Conc, float pH_TCor, float SM_Na, float Tem
 
 extern void CollectISEmV(float * ISE_mV_destination, uint16_t SpotsToSave, uint16_t time_to_wait, uint8_t PRINT_ISE_TIME_DATA, struct ISEConfig *ISEConfig);
 
-extern void CollectISEmV_WhilePumping(uint8_t Direction, uint32_t EndDelay, float * ISE_mV_destination, uint16_t SpotsToSave, uint16_t time, uint8_t PRINT_ISE_TIME_DATA, struct ISEConfig *ISEConfig);
+//extern void CollectISEmV_WhilePumping(uint8_t Direction, uint32_t EndDelay, float * ISE_mV_destination, uint16_t SpotsToSave, uint16_t time, uint8_t PRINT_ISE_TIME_DATA, struct ISEConfig *ISEConfig);
 
 //#ifndef MEMORY_V4
 //extern int32_t PumpUntilpH(uint8_t Direction, uint32_t EndDelay, float * ISE_mV_destination, uint16_t SpotsToSave, uint32_t Max_Steps, float Min_pH, float Max_pH, uint8_t PRINT_ISE_TIME_DATA, struct ISEConfig *ISEConfig, uint16_t Cal_Number, float pH_TCor_Rinse, float * ISE_E_Rinse);

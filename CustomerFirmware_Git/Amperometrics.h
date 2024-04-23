@@ -51,7 +51,9 @@ extern float * CurrentTimeRead(uint8_t ui8Channel, int ADC_CS_PIN, float seconds
 
 extern void CleanAmperometrics(int8_t Ref_drift, uint16_t Cal_Number, uint16_t Test_Number, uint8_t Oxide_Rebuild);
 
+#ifdef CC_CURRENT_LIMITED
 extern void CleanAmperometrics_CurrentLimited(int8_t Ref_drift, uint16_t Cal_Number, uint16_t Test_Number, uint8_t Oxide_Rebuild);
+#endif
 
 #ifdef SWEEP_CLEAN
 extern void CleanAmperometricsSweep(int8_t Ref_drift);
@@ -69,7 +71,7 @@ extern float MeasureConductivity(float Cond_EEP_Rinse, float Cond_EEP_Cal_2, uin
 extern float MeasureConductivity(struct SolutionVals * Sols, uint8_t Test_Number);
 #endif
 
-//extern float ReadCl(uint8_t *Range_flag, float Cl_nA_cutoff);
+extern float ReadClnA(uint8_t Range, float Amp_Voltage_Set, uint8_t ui8TraceTime);
 
 //extern float CalculateCurrent_ORP(float ADC_Voltage, float DAC_Voltage);
 
@@ -85,7 +87,7 @@ extern void CVCleaning(int Start_mV, int End_mV, float rate, uint8_t BothDirecti
 extern void CleanAmperometrics_CurrentLimited_CCOROnly(int8_t Ref_drift, uint16_t Cal_Number, uint16_t Test_Number, uint8_t Oxide_Rebuild);
 #endif
 
-#ifdef TESTING_MODE
+#ifdef READ_REF_GUARD
 extern float ReadRefGuard(float fSec);
 
 //extern void CleanCond(void);

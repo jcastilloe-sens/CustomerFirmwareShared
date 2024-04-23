@@ -14123,208 +14123,208 @@ void CollectISEmV(float * ISE_mV_destination, uint16_t SpotsToSave, uint16_t tim
 	ConnectMemory(1);
 }
 
-//**************************************************************************
-// Pumps and measures ISEs for a certain amount of time, then saves ISE mV
-// into the provided buffer
-// Created: 7/1/2021
-// Parameters:  Direction: FW or BW
-//				EndDelay; Delay to end pump at to adjust pump speed
-//				ISE_mV_destination, buffer to save ISE mV into
-//				SpotsToSave; Bit-mask to determine which ISEs to save into buffer
-//				Time; time to pump for while reading ISEs
-//				PRINT_ISE_TIME_DATA; flag whether or not to print ISE data
-//				ISEConfig; ISE structure to identify which type of sensor is being used
-//**************************************************************************
-void CollectISEmV_WhilePumping(uint8_t Direction, uint32_t EndDelay, float * ISE_mV_destination, uint16_t SpotsToSave, uint16_t Time, uint8_t PRINT_ISE_TIME_DATA, struct ISEConfig *ISEConfig){
-
-	uint16_t cycle = 0;
-	uint16_t i;
-	uint32_t StepsTravelled = 0;
-
-	if((gui32Error & ABORT_ERRORS) == 0)
-	{
-		// GND RE for ISEs
-		IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWA, 0);		// GND RE
-		IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWB, 1);		// Leave CE floating
-
-		ConnectMemory(0);
-
-		//			SysCtlDelay(SysCtlClockGet()/3 * ISE_WAIT);
-
-		// Fastest pump turns is with delay of 3000, needs (8000 - 3000)/300 = 16.66 steps
-		int Delay = 8000;			// starting delay
-		//		int EndDelay = 6000;		// 3000
-		if(EndDelay > Delay)
-			Delay = EndDelay;
-
-		int DelayDecrease = 20; //100; //300;
-
-		// Number of steps that it will be accelerating and decelerating
-		uint32_t Accel_Steps = (Delay - EndDelay) / DelayDecrease;
-//		if(NumberOfSteps < (2 * (Accel_Steps + 1)))	// Adding 1 because using integers gives chance there's a decimal thats lost, want to overshoot delay then correct
-//			Accel_Steps = NumberOfSteps / 2;	// Accelerate for half the steps, decelerate the other half
-
-		DEBUG_PRINT(
-		if(PRINT_ISE_TIME_DATA)
-		{
-//					UARTprintf("\tpH 1\tpH 2\tpH 3\tTH 1\tTH 2\tNH4 1\tNH4 2\tNH4 3\tCa 1\tCa 2\n");
-			UARTprintf("Time");
-			for(i = 0; i < ISEConfig->pH_H2.size; i++)
-				UARTprintf("\tpH (H2) %d", i + 1);
-			for(i = 0; i < ISEConfig->pH_Cr.size; i++)
-				UARTprintf("\tpH (Cr) %d", i + 1);
-			for(i = 0; i < ISEConfig->TH.size; i++)
-				UARTprintf("\tTH %d", i + 1);
-			for(i = 0; i < ISEConfig->NH4.size; i++)
-				UARTprintf("\tNH4 %d", i + 1);
-			for(i = 0; i < ISEConfig->Ca.size; i++)
-				UARTprintf("\tCa %d", i + 1);
-			UARTprintf("\n");
-		}
-		)
-
-#ifdef MCU_ZXR
-		GPIOPinWrite(IO_PUMP_SLEEP_BASE, IO_PUMP_SLEEP_PIN, IO_PUMP_SLEEP_PIN);					// PUMP_SLEEP   = HIGH (turn ON)
-
-		if(Direction == FW)
-			GPIOPinWrite(IO_PUMP_DIR_BASE, IO_PUMP_DIR_PIN, IO_PUMP_DIR_PIN);				// DIR  = HIGH
-		else
-			GPIOPinWrite(IO_PUMP_DIR_BASE, IO_PUMP_DIR_PIN, ~IO_PUMP_DIR_PIN);				// DIR  = LOW
-#else	// MCU_ZXR
-		GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_4, GPIO_PIN_4);					// PUMP_SLEEP   = HIGH (turn ON)
-
-		if(Direction == FW)
-			GPIOPinWrite(GPIO_PORTC_BASE, GPIO_PIN_5, GPIO_PIN_5);				// DIR  = HIGH
-		else
-			GPIOPinWrite(GPIO_PORTC_BASE, GPIO_PIN_5, ~GPIO_PIN_5);				// DIR  = LOW
-#endif	// MCU_ZXR
-
-		SysCtlDelay(16000);
-
-		TimerLoadSet(TIMER1_BASE, TIMER_A, SysCtlClockGet() * 1); // Set periodic timer
-		TimerEnable(TIMER1_BASE, TIMER_A);
-		float Temp_ISE_Buffer[10];
-
-		while(Time > 0)
-		{
-			if((gui32Error & ABORT_ERRORS) != 0)
-				break;
-
-			//					while(g_TimerPeriodicInterruptFlag == 0);
-			while(g_TimerPeriodicInterruptFlag == 0)
-			{
-				// Poll if BT wants to use I2C, if it does reconnect memory and leave it connected, this will make the signal more noisy during this read but
-				// it will prevent the BT from reading incorrect data into the app
-#ifdef MCU_ZXR
-				if(GPIOPinRead(IO_I2C_USED_BY_BT_BASE, IO_I2C_USED_BY_BT_PIN) == IO_I2C_USED_BY_BT_PIN && gui8MemConnected == 0)
-					ConnectMemory(1);
-
-				uint32_t Steps_accelerated = 0;
-				GPIOPinWrite(IO_PUMP_STEP_BASE, IO_PUMP_STEP_PIN, IO_PUMP_STEP_PIN);				// STEP = HIGH
-				SysCtlDelay(Delay);									// wait a bit
-				GPIOPinWrite(IO_PUMP_STEP_BASE, IO_PUMP_STEP_PIN, ~IO_PUMP_STEP_PIN);				// STEP = LOW
-				SysCtlDelay(Delay);
-#else
-				if(GPIOPinRead(GPIO_PORTA_BASE, GPIO_PIN_6) == GPIO_PIN_6 && gui8MemConnected == 0)
-					ConnectMemory(1);
-
-				uint32_t Steps_accelerated = 0;
-				GPIOPinWrite(GPIO_PORTC_BASE, GPIO_PIN_4, GPIO_PIN_4);				// STEP = HIGH
-				SysCtlDelay(Delay);									// wait a bit
-				GPIOPinWrite(GPIO_PORTC_BASE, GPIO_PIN_4, ~GPIO_PIN_4);				// STEP = LOW
-				SysCtlDelay(Delay);
-#endif
-							// wait a bit
-				StepsTravelled++;
-				Steps_accelerated++;
-
-				if(Steps_accelerated < (Accel_Steps))
-				{
-					Delay -= DelayDecrease;
-					if (Delay < EndDelay)
-						Delay = EndDelay;
-				}
-//				else if(StepsToGo <= (Accel_Steps + 1))
+////**************************************************************************
+//// Pumps and measures ISEs for a certain amount of time, then saves ISE mV
+//// into the provided buffer
+//// Created: 7/1/2021
+//// Parameters:  Direction: FW or BW
+////				EndDelay; Delay to end pump at to adjust pump speed
+////				ISE_mV_destination, buffer to save ISE mV into
+////				SpotsToSave; Bit-mask to determine which ISEs to save into buffer
+////				Time; time to pump for while reading ISEs
+////				PRINT_ISE_TIME_DATA; flag whether or not to print ISE data
+////				ISEConfig; ISE structure to identify which type of sensor is being used
+////**************************************************************************
+//void CollectISEmV_WhilePumping(uint8_t Direction, uint32_t EndDelay, float * ISE_mV_destination, uint16_t SpotsToSave, uint16_t Time, uint8_t PRINT_ISE_TIME_DATA, struct ISEConfig *ISEConfig){
+//
+//	uint16_t cycle = 0;
+//	uint16_t i;
+//	uint32_t StepsTravelled = 0;
+//
+//	if((gui32Error & ABORT_ERRORS) == 0)
+//	{
+//		// GND RE for ISEs
+//		IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWA, 0);		// GND RE
+//		IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWB, 1);		// Leave CE floating
+//
+//		ConnectMemory(0);
+//
+//		//			SysCtlDelay(SysCtlClockGet()/3 * ISE_WAIT);
+//
+//		// Fastest pump turns is with delay of 3000, needs (8000 - 3000)/300 = 16.66 steps
+//		int Delay = 8000;			// starting delay
+//		//		int EndDelay = 6000;		// 3000
+//		if(EndDelay > Delay)
+//			Delay = EndDelay;
+//
+//		int DelayDecrease = 20; //100; //300;
+//
+//		// Number of steps that it will be accelerating and decelerating
+//		uint32_t Accel_Steps = (Delay - EndDelay) / DelayDecrease;
+////		if(NumberOfSteps < (2 * (Accel_Steps + 1)))	// Adding 1 because using integers gives chance there's a decimal thats lost, want to overshoot delay then correct
+////			Accel_Steps = NumberOfSteps / 2;	// Accelerate for half the steps, decelerate the other half
+//
+//		DEBUG_PRINT(
+//		if(PRINT_ISE_TIME_DATA)
+//		{
+////					UARTprintf("\tpH 1\tpH 2\tpH 3\tTH 1\tTH 2\tNH4 1\tNH4 2\tNH4 3\tCa 1\tCa 2\n");
+//			UARTprintf("Time");
+//			for(i = 0; i < ISEConfig->pH_H2.size; i++)
+//				UARTprintf("\tpH (H2) %d", i + 1);
+//			for(i = 0; i < ISEConfig->pH_Cr.size; i++)
+//				UARTprintf("\tpH (Cr) %d", i + 1);
+//			for(i = 0; i < ISEConfig->TH.size; i++)
+//				UARTprintf("\tTH %d", i + 1);
+//			for(i = 0; i < ISEConfig->NH4.size; i++)
+//				UARTprintf("\tNH4 %d", i + 1);
+//			for(i = 0; i < ISEConfig->Ca.size; i++)
+//				UARTprintf("\tCa %d", i + 1);
+//			UARTprintf("\n");
+//		}
+//		)
+//
+//#ifdef MCU_ZXR
+//		GPIOPinWrite(IO_PUMP_SLEEP_BASE, IO_PUMP_SLEEP_PIN, IO_PUMP_SLEEP_PIN);					// PUMP_SLEEP   = HIGH (turn ON)
+//
+//		if(Direction == FW)
+//			GPIOPinWrite(IO_PUMP_DIR_BASE, IO_PUMP_DIR_PIN, IO_PUMP_DIR_PIN);				// DIR  = HIGH
+//		else
+//			GPIOPinWrite(IO_PUMP_DIR_BASE, IO_PUMP_DIR_PIN, ~IO_PUMP_DIR_PIN);				// DIR  = LOW
+//#else	// MCU_ZXR
+//		GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_4, GPIO_PIN_4);					// PUMP_SLEEP   = HIGH (turn ON)
+//
+//		if(Direction == FW)
+//			GPIOPinWrite(GPIO_PORTC_BASE, GPIO_PIN_5, GPIO_PIN_5);				// DIR  = HIGH
+//		else
+//			GPIOPinWrite(GPIO_PORTC_BASE, GPIO_PIN_5, ~GPIO_PIN_5);				// DIR  = LOW
+//#endif	// MCU_ZXR
+//
+//		SysCtlDelay(16000);
+//
+//		TimerLoadSet(TIMER1_BASE, TIMER_A, SysCtlClockGet() * 1); // Set periodic timer
+//		TimerEnable(TIMER1_BASE, TIMER_A);
+//		float Temp_ISE_Buffer[10];
+//
+//		while(Time > 0)
+//		{
+//			if((gui32Error & ABORT_ERRORS) != 0)
+//				break;
+//
+//			//					while(g_TimerPeriodicInterruptFlag == 0);
+//			while(g_TimerPeriodicInterruptFlag == 0)
+//			{
+//				// Poll if BT wants to use I2C, if it does reconnect memory and leave it connected, this will make the signal more noisy during this read but
+//				// it will prevent the BT from reading incorrect data into the app
+//#ifdef MCU_ZXR
+//				if(GPIOPinRead(IO_I2C_USED_BY_BT_BASE, IO_I2C_USED_BY_BT_PIN) == IO_I2C_USED_BY_BT_PIN && gui8MemConnected == 0)
+//					ConnectMemory(1);
+//
+//				uint32_t Steps_accelerated = 0;
+//				GPIOPinWrite(IO_PUMP_STEP_BASE, IO_PUMP_STEP_PIN, IO_PUMP_STEP_PIN);				// STEP = HIGH
+//				SysCtlDelay(Delay);									// wait a bit
+//				GPIOPinWrite(IO_PUMP_STEP_BASE, IO_PUMP_STEP_PIN, ~IO_PUMP_STEP_PIN);				// STEP = LOW
+//				SysCtlDelay(Delay);
+//#else
+//				if(GPIOPinRead(GPIO_PORTA_BASE, GPIO_PIN_6) == GPIO_PIN_6 && gui8MemConnected == 0)
+//					ConnectMemory(1);
+//
+//				uint32_t Steps_accelerated = 0;
+//				GPIOPinWrite(GPIO_PORTC_BASE, GPIO_PIN_4, GPIO_PIN_4);				// STEP = HIGH
+//				SysCtlDelay(Delay);									// wait a bit
+//				GPIOPinWrite(GPIO_PORTC_BASE, GPIO_PIN_4, ~GPIO_PIN_4);				// STEP = LOW
+//				SysCtlDelay(Delay);
+//#endif
+//							// wait a bit
+//				StepsTravelled++;
+//				Steps_accelerated++;
+//
+//				if(Steps_accelerated < (Accel_Steps))
 //				{
-//					Delay += DelayDecrease;
+//					Delay -= DelayDecrease;
+//					if (Delay < EndDelay)
+//						Delay = EndDelay;
 //				}
-				//			Delay = Delay - DelayDecrease;
-				//			if (Delay < EndDelay)
-				//				Delay = EndDelay;
-
-				if((gui32Error & ABORT_ERRORS) != 0)
-					break;
-
-			}
-			g_TimerPeriodicInterruptFlag = 0;
-			cycle++;
-
-			// Decelerate pump
-			for(i = 0; i < Accel_Steps; i++)
-			{
-				Delay += DelayDecrease;
-
-#ifdef MCU_ZXR
-				GPIOPinWrite(IO_PUMP_STEP_BASE, IO_PUMP_STEP_PIN, IO_PUMP_STEP_PIN);				// STEP = HIGH
-				SysCtlDelay(Delay);									// wait a bit
-				GPIOPinWrite(IO_PUMP_STEP_BASE, IO_PUMP_STEP_PIN, ~IO_PUMP_STEP_PIN);				// STEP = LOW
-				SysCtlDelay(Delay);									// wait a bit
-#else
-				GPIOPinWrite(GPIO_PORTC_BASE, GPIO_PIN_4, GPIO_PIN_4);				// STEP = HIGH
-				SysCtlDelay(Delay);									// wait a bit
-				GPIOPinWrite(GPIO_PORTC_BASE, GPIO_PIN_4, ~GPIO_PIN_4);				// STEP = LOW
-				SysCtlDelay(Delay);									// wait a bit
-#endif
-				StepsTravelled++;
-			}
-
-			// Collect all the readings in a temporary buffer
-//			userDelay(10, 1);	// Delay to try to get rid of noise, realized "noise" is the dead spot in the pump
-			for(i = 0; i < 5; i++)
-				Temp_ISE_Buffer[i] = (2 * ADCReadAvg(i + 1, ADC1_CS_B, 10) - 3000)/5;
-			for(i = 5; i < 10; i++)
-				Temp_ISE_Buffer[i] = (2 * ADCReadAvg(i - 4, ADC2_CS_B, 10) - 3000)/5;
-
-			// Sort the readings into an array that is organized by sensor type, pH->TH->NH4->Ca
-			for(i = 0; i < 10; i++)
-				if(((SpotsToSave >> i) & 1) && ISE_mV_destination != NULL)	// Only save data if flag for spot is marked in SpotsToSave variable
-					ISE_mV_destination[i] = Temp_ISE_Buffer[ISEConfig->Location[i] - 1];
-
-			DEBUG_PRINT(
-			if(PRINT_ISE_TIME_DATA)
-			{
-				UARTprintf("%d", cycle);
-				for(i = 0; i < 10; i++)
-					UARTprintf("\t%d", (int) (Temp_ISE_Buffer[ISEConfig->Location[i] - 1] * 1000));
-				UARTprintf("\n");
-			}
-			)
-
-			Time--;
-		}
-		TimerDisable(TIMER1_BASE, TIMER_A);
-		g_TimerPeriodicInterruptFlag = 0;
-	}
-
-	if((gui32Error & ABORT_ERRORS) != 0)
-		SysCtlDelay(SysCtlClockGet()/30000);	// Delay 100 us before turning on pump sleep
-
-#ifdef MCU_ZXR
-	GPIOPinWrite(IO_PUMP_SLEEP_BASE, IO_PUMP_SLEEP_PIN, ~IO_PUMP_SLEEP_PIN);					// PUMP_SLEEP   = OFF (turn ON)
-#else
-	GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_4, ~GPIO_PIN_4);					// PUMP_SLEEP   = OFF (turn ON)
-#endif
-	if(g_PumpStepsTravelled != 0xFFFFFFFF)	// Don't adjust this if pump home position hasn't been found yet, assuming I never pump -1 steps...
-	{
-		if(Direction == FW)
-			g_PumpStepsTravelled += StepsTravelled;
-		else
-			g_PumpStepsTravelled -= StepsTravelled;
-	}
-	DEBUG_PRINT(UARTprintf("Travelled %d steps while measuring!\n", StepsTravelled);)
-
-	ConnectMemory(1);
-}
+////				else if(StepsToGo <= (Accel_Steps + 1))
+////				{
+////					Delay += DelayDecrease;
+////				}
+//				//			Delay = Delay - DelayDecrease;
+//				//			if (Delay < EndDelay)
+//				//				Delay = EndDelay;
+//
+//				if((gui32Error & ABORT_ERRORS) != 0)
+//					break;
+//
+//			}
+//			g_TimerPeriodicInterruptFlag = 0;
+//			cycle++;
+//
+//			// Decelerate pump
+//			for(i = 0; i < Accel_Steps; i++)
+//			{
+//				Delay += DelayDecrease;
+//
+//#ifdef MCU_ZXR
+//				GPIOPinWrite(IO_PUMP_STEP_BASE, IO_PUMP_STEP_PIN, IO_PUMP_STEP_PIN);				// STEP = HIGH
+//				SysCtlDelay(Delay);									// wait a bit
+//				GPIOPinWrite(IO_PUMP_STEP_BASE, IO_PUMP_STEP_PIN, ~IO_PUMP_STEP_PIN);				// STEP = LOW
+//				SysCtlDelay(Delay);									// wait a bit
+//#else
+//				GPIOPinWrite(GPIO_PORTC_BASE, GPIO_PIN_4, GPIO_PIN_4);				// STEP = HIGH
+//				SysCtlDelay(Delay);									// wait a bit
+//				GPIOPinWrite(GPIO_PORTC_BASE, GPIO_PIN_4, ~GPIO_PIN_4);				// STEP = LOW
+//				SysCtlDelay(Delay);									// wait a bit
+//#endif
+//				StepsTravelled++;
+//			}
+//
+//			// Collect all the readings in a temporary buffer
+////			userDelay(10, 1);	// Delay to try to get rid of noise, realized "noise" is the dead spot in the pump
+//			for(i = 0; i < 5; i++)
+//				Temp_ISE_Buffer[i] = (2 * ADCReadAvg(i + 1, ADC1_CS_B, 10) - 3000)/5;
+//			for(i = 5; i < 10; i++)
+//				Temp_ISE_Buffer[i] = (2 * ADCReadAvg(i - 4, ADC2_CS_B, 10) - 3000)/5;
+//
+//			// Sort the readings into an array that is organized by sensor type, pH->TH->NH4->Ca
+//			for(i = 0; i < 10; i++)
+//				if(((SpotsToSave >> i) & 1) && ISE_mV_destination != NULL)	// Only save data if flag for spot is marked in SpotsToSave variable
+//					ISE_mV_destination[i] = Temp_ISE_Buffer[ISEConfig->Location[i] - 1];
+//
+//			DEBUG_PRINT(
+//			if(PRINT_ISE_TIME_DATA)
+//			{
+//				UARTprintf("%d", cycle);
+//				for(i = 0; i < 10; i++)
+//					UARTprintf("\t%d", (int) (Temp_ISE_Buffer[ISEConfig->Location[i] - 1] * 1000));
+//				UARTprintf("\n");
+//			}
+//			)
+//
+//			Time--;
+//		}
+//		TimerDisable(TIMER1_BASE, TIMER_A);
+//		g_TimerPeriodicInterruptFlag = 0;
+//	}
+//
+//	if((gui32Error & ABORT_ERRORS) != 0)
+//		SysCtlDelay(SysCtlClockGet()/30000);	// Delay 100 us before turning on pump sleep
+//
+//#ifdef MCU_ZXR
+//	GPIOPinWrite(IO_PUMP_SLEEP_BASE, IO_PUMP_SLEEP_PIN, ~IO_PUMP_SLEEP_PIN);					// PUMP_SLEEP   = OFF (turn ON)
+//#else
+//	GPIOPinWrite(GPIO_PORTF_BASE, GPIO_PIN_4, ~GPIO_PIN_4);					// PUMP_SLEEP   = OFF (turn ON)
+//#endif
+//	if(g_PumpStepsTravelled != 0xFFFFFFFF)	// Don't adjust this if pump home position hasn't been found yet, assuming I never pump -1 steps...
+//	{
+//		if(Direction == FW)
+//			g_PumpStepsTravelled += StepsTravelled;
+//		else
+//			g_PumpStepsTravelled -= StepsTravelled;
+//	}
+//	DEBUG_PRINT(UARTprintf("Travelled %d steps while measuring!\n", StepsTravelled);)
+//
+//	ConnectMemory(1);
+//}
 
 //#ifndef MEMORY_V4
 ////**************************************************************************
