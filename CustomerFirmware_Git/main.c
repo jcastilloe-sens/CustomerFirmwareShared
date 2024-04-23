@@ -1043,6 +1043,7 @@ int main(void) {
 
 			DEBUG_PRINT(UARTprintf("UART Commands:\nA: Alkalinity\nF: Free Chlorine\nT: Total Chlorine\nP: Pump sample vial\nC: Auto Calibration\nR: Rerun Cal\nB: Prime bubbles out of pouch tubes\n");)
 			DEBUG_PRINT(UARTprintf("V: Turn and store valve\nM: Write to memory\n");)
+			DEBUG_PRINT(UARTprintf("1: Run Factory Cal\n");)
 #endif
 
 			while(g_state == STATE_IDLE)
@@ -1485,7 +1486,9 @@ int main(void) {
 							}
 						}
 						else
+						{
 							DEBUG_PRINT(UARTprintf("Plug in sensor and try again\n");)
+						}
 					}
 
 					if(Command == 'M')
@@ -1554,8 +1557,27 @@ int main(void) {
 							}
 						}
 						else
+						{
 							DEBUG_PRINT(UARTprintf("Plug in sensor and try again\n");)
+						}
 					}
+
+					if(Command == '1')
+					{
+						if(POWER_ANALOG_OFF && gBoard >= V6_4 && STORE_AT_POTENTIAL == 0)
+						{
+							InitAnalog();
+						}
+
+						// Turn off battery timer during test
+						TimerDisable(TIMER2_BASE, TIMER_A);
+						TimerDisable(WTIMER0_BASE, TIMER_A);
+						TimerDisable(WTIMER1_BASE, TIMER_A);
+
+						g_state = STATE_FACTORY_CAL; // Switch to test mode
+						g_next_state = STATE_IDLE;
+					} 	// Factory Cal command
+
 				}
 #endif
 
@@ -9406,11 +9428,15 @@ int main(void) {
 					DEBUG_PRINT(UARTprintf("Volume of T1: %d, %d nL\n", (int) (PumpVol_T1[0] * 1000), (int) (PumpVol_T1[1] * 1000));)
 					DEBUG_PRINT(UARTprintf("pH H2 Cal Status:");)
 					for(i = 0; i < ISEs.pH_H2.size; i++)
+					{
 						DEBUG_PRINT(UARTprintf(" %u", ISE_Cal_Status[ISEs.pH_H2.index + i]);)
+					}
 					DEBUG_PRINT(UARTprintf("\n");)
 					DEBUG_PRINT(UARTprintf("pH Cr Cal Status:");)
 					for(i = 0; i < ISEs.pH_Cr.size; i++)
+					{
 						DEBUG_PRINT(UARTprintf(" %u", ISE_Cal_Status[ISEs.pH_Cr.index + i]);)
+					}
 					DEBUG_PRINT(UARTprintf("\n");)
 #endif
 
@@ -14146,6 +14172,1717 @@ int main(void) {
 			g_next_state = STATE_IDLE;
 			break;
 		}
+#ifdef TESTING_MODE
+		case STATE_FACTORY_CAL:
+		{
+
+			// Must send status before updating error so we know where to assign error
+			update_Status(STATUS_TEST, OPERATION_TEST_PRECHECK);	// Send status to BT that this is pre-check
+
+			// Set error to 0 at beginning
+			gui32Error = 0;
+			update_Error();
+
+			// Precheck to make sure everything is good to run calibration
+			gui32Error = ROAM_RESET;	// Set global error to ROAM_RESET so its only error at beginning so all errors that appear are during running test
+			pui8SysStatus = RequestSystemStatus(); // Get time and user information at beginning of test
+			CheckCartridge(pui8SysStatus);
+			uint8_t Battery_Percent = BatteryRead(REP_SOC_REG);
+			if(Battery_Percent < MIN_BAT_LEVEL && GPIOPinRead(GPIO_PORTE_BASE, GPIO_PIN_0) != 0)	// Check that battery is at minimum level or device is plugged in
+			{
+				UARTprintf("Battery is too low! Aborting Test!\n");
+				gui32Error |= BATTERY_TOO_LOW;
+			}
+
+			uint32_t counter = 0;
+
+			// Check for error that would prevent us from starting calibration, blink light red if this occurs
+			if(gui32Error != ROAM_RESET)	// Something in the cartridge failed (max number of tests exceeded or cartridge expired) or battery check failed
+			{
+				if(ENFORCE_ERRORS != 0)
+				{
+					update_Status(STATUS_TEST, OPERATION_TEST_FAILED);	// Send status to BT that this is pre-check
+
+					gui32Error &= ~ROAM_RESET;	// Remove ROAM_RESET flag since software stopped calibration
+					update_Error();
+
+					SetLED(GREEN_BUTTON | GREEN_BUTTON_V, 0);
+					SetLED(RED_BUTTON | RED_BUTTON_V, 1);
+					while(GPIOPinRead(GPIO_PORTF_BASE, GPIO_PIN_3) == GPIO_PIN_3 && counter < TIMEOUT)
+					{
+						SysCtlDelay(SysCtlClockGet()/3000);
+						counter++;
+
+						// Break out of while loop if continue calibration command is received
+						if(g_ui32DataRx0[0] == CONTINUE_TEST && g_ulSSI0RXTO > 0)
+						{
+							g_ulSSI0RXTO = 0;
+							break;
+						}
+
+						// Return to idle if abort command is received
+						if(g_state != STATE_MEASUREMENT)
+						{
+							break;
+						}
+					}
+
+					g_state = STATE_IDLE;
+					g_next_state = STATE_IDLE;
+					break;
+				}
+			}
+
+
+			if(CheckCalibration(pui8SysStatus, 1) == 1)
+				SetLED(GREEN_BUTTON | GREEN_BUTTON_V, 1);
+			else
+			{
+				SetLED(BLUE_BUTTON | BLUE_BUTTON_V, 1);
+			}
+
+			struct ISEConfig ISEs;
+			FillISEStruct(&ISEs);
+
+			//
+			// Checks which parts of calibration to run
+			//
+			if(ISEs.Config == 0xFF)
+			{
+				UARTprintf("WARNING! This sensor configuration isn't saved to memory!\n");
+				SetLED(GREEN_BUTTON | GREEN_BUTTON_V | BLUE_BUTTON | BLUE_BUTTON_V, 0);
+				SetLED(RED_BUTTON, 1);
+			}
+
+			uint8_t *pui8TempCoefficients = MemoryRead(PAGE_FACTORY_CAL, OFFSET_TEMP_COEFFICIENT_A, 12);
+			float A = Build_float(pui8TempCoefficients);
+			float B = Build_float(pui8TempCoefficients + 4);
+			float C = Build_float(pui8TempCoefficients + 8);
+
+			if(A != A || B != B || C != C)
+			{
+				UARTprintf("WARNING! This sensors amperometric temperature sensor hasn't been calibrated!\n");
+				SetLED(GREEN_BUTTON | GREEN_BUTTON_V | BLUE_BUTTON | BLUE_BUTTON_V, 0);
+				SetLED(RED_BUTTON, 1);
+			}
+
+			UARTprintf("\n");
+
+			UARTprintf("What parts of the calibration do you want to run?\n");
+			UARTprintf("Type C for conductivity calibration\n");
+			UARTprintf("Type F or T for chlorine dummy runs\n");
+			UARTprintf("Type R for Thermistor correction\n");
+			UARTprintf("Press enter when done, or press button on device! If none of these are typed in everything will be included!\n");
+
+			// Clear UART FIFO
+			while(UARTCharsAvail(UART0_BASE))
+				UARTCharGetNonBlocking(UART0_BASE);
+
+			uint8_t CONDITION_AMPS = 0;
+			uint8_t CALIBRATE_CONDUCTIVITY = 0;
+			uint8_t CALIBRATE_THERM = 0;
+			uint8_t confirmation = 0;
+			while(confirmation == 0)
+			{
+				if(GPIOPinRead(GPIO_PORTF_BASE, GPIO_PIN_3) == 0)
+					confirmation = 1;
+				if(UARTCharsAvail(UART0_BASE))
+				{
+					int32_t UART_Rx = UARTCharGet(UART0_BASE);
+					UARTCharPutNonBlocking(UART0_BASE, UART_Rx); //echo character
+					UARTprintf(", ");
+
+					if(UART_Rx == 0x0D)	// 0x0D = enter; use hex because UART_Rx is defined as int32_t because thats what UARTCharGet returns
+						confirmation = 1;
+					else if(UART_Rx == 0x43 || UART_Rx == 0x63) // 0x43 = C, 0x63 = c
+						CALIBRATE_CONDUCTIVITY = 1;
+					else if(UART_Rx == 0x46 || UART_Rx == 0x66) // 0x46 = F, 0x66 = f
+						CONDITION_AMPS = 1;
+					else if(UART_Rx == 0x54 || UART_Rx == 0x74) // 0x54 = T, 0x74 = t
+						CONDITION_AMPS = 1;
+					else if(UART_Rx == 0x52 || UART_Rx == 0x72) // 0x52 = R, 0x72 = r
+						CALIBRATE_THERM = 1;
+				}
+			}
+
+			uint8_t approval = 0;
+			if(CONDITION_AMPS == 0 && CALIBRATE_CONDUCTIVITY == 0 && CALIBRATE_THERM == 0)
+			{
+				CONDITION_AMPS = 1;
+				CALIBRATE_CONDUCTIVITY = 1;
+				CALIBRATE_THERM = 1;
+				approval = 1;
+			}
+
+			UARTprintf("\nCalibration includes:\n");
+			if(CALIBRATE_CONDUCTIVITY)
+				UARTprintf("Calibration Conductivity\n");
+			if(CONDITION_AMPS)
+				UARTprintf("Running Cl Dummy points\n");
+			if(CALIBRATE_THERM)
+				UARTprintf("Calibrating Thermistor\n");
+			UARTprintf("\n");
+
+			if(approval == 0)
+			{
+				UARTprintf("Is the above list correct?\n");
+				UARTprintf("Press enter or push the button on the device to continue\n");
+				UARTprintf("Type what needs to be added if incorrect\n");
+				while(approval == 0)
+				{
+					if(GPIOPinRead(GPIO_PORTF_BASE, GPIO_PIN_3) == 0)
+						approval = 1;
+					if(UARTCharsAvail(UART0_BASE))
+					{
+						int32_t UART_Rx = UARTCharGet(UART0_BASE);
+						UARTCharPutNonBlocking(UART0_BASE, UART_Rx); //echo character
+						UARTprintf(", ");
+
+						if(UART_Rx == 0x0D)	// 0x0D = enter; use hex because UART_Rx is defined as int32_t because thats what UARTCharGet returns
+							approval = 1;
+						else if(UART_Rx == 0x43 || UART_Rx == 0x63) // 0x43 = C, 0x63 = c
+							CALIBRATE_CONDUCTIVITY = 1;
+						else if(UART_Rx == 0x46 || UART_Rx == 0x66) // 0x46 = F, 0x66 = f
+							CONDITION_AMPS = 1;
+						else if(UART_Rx == 0x54 || UART_Rx == 0x74) // 0x54 = T, 0x74 = t
+							CONDITION_AMPS = 1;
+						else if(UART_Rx == 0x52 || UART_Rx == 0x72) // 0x52 = R, 0x72 = r
+							CALIBRATE_THERM = 1;
+					}
+				}
+			}
+
+			SetLED(GREEN_BUTTON | GREEN_BUTTON_V | RED_BUTTON | RED_BUTTON_V | BLUE_BUTTON | BLUE_BUTTON_V, 0);
+			if(g_state == STATE_MEASUREMENT)
+				SetLED(GREEN_BUTTON_BLINK, 1);
+
+			while(GPIOPinRead(GPIO_PORTF_BASE, GPIO_PIN_3) == 0);
+
+			if(counter == (TIMEOUT * 5))
+				g_state = STATE_IDLE;
+
+			// Return to idle if abort command is received
+			if(g_state != STATE_MEASUREMENT)
+				break;
+
+			update_Status(STATUS_TEST, OPERATION_TEST_RINSE);
+
+			UARTprintf("\n");
+
+			uint8_t FactoryCalCheck = 1;
+			uint8_t ThermCheck = 1;
+			uint8_t CondCheck = 1;
+//			uint8_t ClCheck = 1;
+
+			//			// TODO: Set pump variables for test
+			// Variables to control pump and valve
+			uint8_t Number_of_bubbles_Cond = 10;// - Rinse_pumped;
+//			uint8_t Number_of_bubbles_Prerinse = 3;// - Rinse_pumped;
+//			uint8_t Number_of_bubbles_samp = 4;
+			uint8_t Number_of_bubbles_Postrinse = 1;
+
+			uint8_t Test_Number = FindTestNumber() + 1; // Add 1 to go to next free spot in memory
+
+			float PumpVol_air_bubble = 33.6;			// Volume uL of air bubble
+			uint8_t PumpVol_Large_air_bubble = 84;		// Large air bubble on pre/post rinse
+			float PumpVol_Solution = 33.6;				// Volume uL for solution between air bubbles
+			float PumpVol_Clean = 117.6;				// Volume for clean plug
+			float PumpVol_Clean_center = 125.86;		// Volume to center clean plug
+
+			float PumpVol_Rinse = 100.8;		// Volume of prerinse after air bubbles
+//			float PumpVol_Sample = 134.4;		// Volume of sample after bubbles
+			float PumpVol_plug = 141.29;		// Volume to center the measurement plugs on the sensors and reference.
+//			float PumpVol_plug_samp = 131.37;	// Volume to center sample plug for measurement
+			uint16_t PumpVol_sample_rinse = 840;	// How much sample to pull before metering, large to clear air out of chip before metering buffers
+
+			uint16_t PumpVol_Sample_Prime = 403;	// Volume to prime sample tube before initial rinse
+
+			// Variables to control mixing
+			uint16_t diffusion_time = 0;				// Time to wait after oscillating in mixing chamber
+			uint8_t mix_cycles = 5; //10;				// Number of forward backward pump cycles
+			uint16_t Steps_cycles = 1500;// * gPump_Ratio;			// Steps to pump forward/backward
+
+			// Priming B1
+			float PumpVol_tube_bubble = 16.8;
+			float PumpVol_tube_prime_buffers = 33.6;
+//			float PumpVol_tube_prime = 16.8;
+
+			// Read step values from memory
+			float PumpVol_Buffer = 13.22;	// Adjust this number for B1
+//			float PumpVol_B2 = 13.22;	// Adjust this number for B2
+
+			// Initialize floats to hold pump variables
+			float PumpVolRev, Pump_Ratio;
+
+			// Read from Tiva EEPROM the pump specs
+			EEPROMRead((uint32_t *) &PumpVolRev, OFFSET_PUMP_VOL_PER_REV, 4);
+			EEPROMRead((uint32_t *) &Pump_Ratio, OFFSET_PUMP_DEAD_SPOT, 4);
+
+			if(PumpVolRev != PumpVolRev)
+				PumpVolRev = 16.8;
+			if(Pump_Ratio != Pump_Ratio)
+				Pump_Ratio = 0.61;
+
+//			// Variable to control pumping T1
+//			uint16_t Steps_PreT1 = 3000;	// Number of pump steps to pull sample before buffer, leaving this as steps so pump starts metering in a known location
+//			float PumpVol_PostT1 = 117.6 - ((Steps_PreT1/1000) * PumpVolRev);	// Volume to pull sample after buffer
+//			float PumpVol_follow_T1 = 19.55;	// Volume to get T1 mixture into mixing chamber
+//			float PumpVol_center_T1 = 131.65;	// Volume to place mixed sample over sensor
+
+			// Variable to control pumping B1
+			uint16_t Steps_PreB1 = 2000;	// Number of pump steps to pull sample before buffer
+			float PumpVol_PostB1 = 100.8 - ((Steps_PreB1/1000) * PumpVolRev);	// Number of pump steps to pull sample after buffer
+			//			uint16_t Steps_follow_B1 = 600;// * gPump_Ratio;	// Steps to pump sample to get B1 mixture into mixing chamber
+			float PumpVol_center = 119.67;		// Steps to pump to place mixed sample over sensor
+
+			// Variables to control pumping C2
+//			uint16_t Steps_Precond = 2000;// * gPump_Ratio;		// Number of pump steps to pull sample before buffer
+//			uint16_t Steps_Postcond = 4000;// * gPump_Ratio;	// Number of pump steps to pull sample after buffer
+			float PumpVol_C2 = 7.27;							// Volume of conditioner, should be constant
+			float PumpVol_follow_C2 = 15.28 - PumpVol_C2;// * gPump_Ratio;	// Change this number to change where in the mixing chamber the sample and conditioner are mixed
+			float PumpVol_center_B2 = 117.74 + PumpVol_C2;// * gPump_Ratio;		// Steps to pump to place mixed sample over sensor
+
+			// Variables to control mixing B2
+			//			uint16_t Steps_sample_between_Cl = 10000 + Steps_follow_B1 + Steps_center;
+//			uint16_t PumpVol_sample_between_Cl = 840;
+			//			uint16_t Steps_back = (5500 + Steps_C2);// * gPump_Ratio; 		// Steps to pump mixed conditioner/sample back into valve before adding buffer, add C2 steps so pump starts at zero for buffer
+			float PumpVol_back = 100.8 + 15.28;	// Volume to pump mixed conditioner/sample back into valve before adding buffer, add C2 and follow steps so pump starts at zero for B2
+			float PumpVol_forward = (100.8 + 15.28 - PumpVolRev - PumpVol_Buffer);		// Change this number to change where in mixing chamber the sample and buffer are mixed, pump forward the backward amount less a pump revolution and B2 volume
+
+
+			// Variables to control pump speed
+			// 6000 is slow pumping being used for everything else
+			// Slowest speed is 8000, may be able to go slower but the function will need to be changed
+			// Fastest speed is 3000, may work up to 2500 depends on the pump
+			uint16_t Speed_Fast = 3000;
+			uint16_t Speed_Metering = 6000;
+
+//			uint16_t Cond_delay = 1000;
+
+			uint8_t i;
+
+			uint16_t valve_delay = 1000;
+			uint16_t valve_delay_after_air = 100; //1000;
+			uint16_t valve_delay_metering = 500; // 2000;
+
+			if((gui32Error & 0) != 0)
+				break;
+
+			float Therm_corr;
+			float Cond_Slope;
+			if(CALIBRATE_CONDUCTIVITY || CALIBRATE_THERM)
+			{
+				FindPossitionOneValve();
+				// Prime sample tube before test
+				UARTprintf("Fill sample vial with low conductivity calibrant\n");
+				if(CALIBRATE_THERM)
+					UARTprintf("To calibrate Thermistor measure the sample temperature IN THE SAMPLE VIAL!!!\n");
+
+				BuzzerSound(400);
+				SetLED(BLUE_BUTTON_BLINK, 1);
+				while(GPIOPinRead(GPIO_PORTF_BASE, GPIO_PIN_3) == GPIO_PIN_3);
+				while(GPIOPinRead(GPIO_PORTF_BASE, GPIO_PIN_3) == 0);
+				SetLED(BLUE_BUTTON_BLINK, 0);
+
+				float T_Therm_S = ReadThermistor();
+
+				UARTprintf("Priming sample tube... \n");
+				RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
+				PumpVolume(FW, PumpVol_Sample_Prime, Speed_Fast, 1);
+				userDelay(valve_delay, 1);
+
+				float T_Therm_F = ReadThermistor();
+				UARTprintf("Therm Start and Final Temps:\t%d\t%d\tC*1000\n", (int) (T_Therm_S * 1000), (int) (T_Therm_F * 1000));
+
+				if(CALIBRATE_THERM)
+				{
+					UARTprintf("Type in measured vial temperature in the format: '##.##'\n");
+
+					BuzzerSound(400);
+					SetLED(BLUE_BUTTON_BLINK, 1);
+
+					int32_t UART_Rx[4] = {0,0,0,0};
+					uint8_t check = 0;
+					while(check != 1)
+					{
+						// Clear UART FIFO
+						while(UARTCharsAvail(UART0_BASE))
+							UARTCharGetNonBlocking(UART0_BASE);
+
+						uint8_t count = 0;
+						for(count = 0; count < 4; count++)
+						{
+							UART_Rx[count] = UARTCharGet(UART0_BASE);
+							UARTCharPutNonBlocking(UART0_BASE, UART_Rx[count]); //echo character
+
+							if(UART_Rx[count] == 0x0D)	// If the user pressed enter
+							{
+								UARTprintf("\nReceived enter, breaking for loop\n"); // Set this up so the user can press enter to restart typing the number
+								break;
+							}
+						}
+						UARTprintf("\n");
+
+						// Check that the 4 characters are a number, followed by decimal, followed by two numbers, also check all 4 characters were recevied
+						if((UART_Rx[0] >= 0x30 && UART_Rx[0] <= 0x39) && (UART_Rx[1] >= 0x30 && UART_Rx[1] <= 0x39) && (UART_Rx[2] == 0x2E) && (UART_Rx[3] >= 0x30 && UART_Rx[3] <= 0x39) && count == 4)
+							check = 1;
+						else
+							UARTprintf("Entered data not in required format, needs to be ##.#! Try again!\n");
+					}
+					SetLED(BLUE_BUTTON_BLINK, 0);
+
+					float T_Vial = (UART_Rx[0] - 0x30) * 10 + (UART_Rx[1] - 0x30) + ((float) (UART_Rx[3] - 0x30))/10;	// Convert string into a float
+					UARTprintf("Converted to float: %d * 1000\n\n", (int) (T_Vial * 1000));
+
+					//					UARTprintf("Received characters: %c%c%c%c\n", UART_Rx[0], UART_Rx[1], UART_Rx[2], UART_Rx[3]);
+
+					Therm_corr = (T_Therm_F - T_Therm_S) / (T_Therm_S - T_Vial);
+					UARTprintf("Thermistor correction found: %d / 1000\n", (int) (Therm_corr * 1000));
+					if(Therm_corr >= -1 && Therm_corr <= -0.5)
+					{
+						UARTprintf("Thermistor correction seems realistic, saving to cartridge memory!\n");
+						MemoryWrite(PAGE_FACTORY_CAL, OFFSET_THERM_CORRECTION, 4, (uint8_t *) &Therm_corr);
+					}
+					else
+					{
+						UARTprintf("Thermistor correction outside of expected range, not saving to memory!\n");
+						FactoryCalCheck = 0;
+						ThermCheck = 0;
+					}
+				}
+
+				//
+				// Conductivity low point calibrant
+				//
+				if((gui32Error & 0) == 0)
+				{
+					update_Status(STATUS_TEST, OPERATION_TEST_RINSE);
+					UARTprintf("Pumping low point conductivity calibrant... \n");
+
+					RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);
+					FindPossitionZeroPump();
+					for (i = 0; i < Number_of_bubbles_Cond; i++) // Loop over air/solution cycle 3 times for single solution
+					{
+						RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
+						PumpVolume(FW, PumpVol_air_bubble, Speed_Fast, 1);
+						if(i == (Number_of_bubbles_Cond - 1))
+							PumpVolume(FW, PumpVol_Large_air_bubble, Speed_Fast, 1);
+						userDelay(valve_delay, 1);
+						RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
+						if(i == 0 && BUBBLES_IN_TUBE)
+							PumpVolume(FW, PumpVol_tube_bubble, Speed_Fast, 1);
+						PumpVolume(FW, PumpVol_Solution, Speed_Fast, 1);
+						if(i != (Number_of_bubbles_Cond - 1))
+							userDelay(valve_delay, 1);
+					}
+					PumpVolume(FW, PumpVol_Rinse, Speed_Fast, 1);
+					userDelay(valve_delay, 1);
+					RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
+					PumpVolume(FW, PumpVol_plug, Speed_Fast, 1);
+				}
+
+				float CalConductivity[3] = {0,0,0};
+				float CalConductivity_alt[3] = {0,0,0};
+				float T_Cond[3] = {0,0,0};
+				float Conductivity_cal[3] = {64.1, 64.1, 64.1};
+//				float Conductivity_cal[3] = {364, 364, 364};
+
+				// Measure conductivity
+				// Set RE and CE floating and close RE/CE loop for conductivity
+				IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWA, 1);
+				IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWB, 0);
+
+				// Set low current range
+				// 10.7 uApp R = 309k + 499k = 808k
+				IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 0);
+				IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 0);
+
+//				// Set mid current range
+//				// 20 uApp R = 430k
+//				IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 1);
+//				IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 1);
+
+				uint8_t ExtraCondPoints = 3;
+				for(i = 0; i < 3; i++)
+				{
+					if(i > 0 && ExtraCondPoints > 0)
+					{
+						i = 0;
+						ExtraCondPoints--;
+					}
+
+					RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
+					PumpVolume(FW, PumpVol_Rinse + PumpVol_Solution, Speed_Fast, 1);
+					userDelay(valve_delay, 1);
+					RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
+					PumpVolume(FW, PumpVol_plug, Speed_Fast, 1);
+
+					ConnectMemory(0);
+
+					// Set low current range
+					// 10.7 uApp R = 309k + 499k = 808k
+					IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 0);
+					IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 0);
+
+					if(gABoard >= ARV1_0B)
+					{
+						InitWaveGen(0, 1000);	// Change frequency to 1kHz
+
+						// Set low current range
+						// 10.7 uApp R = 309k + 499k = 808k
+						IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 0);
+						IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 0);
+
+						uint8_t Check = 0, attempt = 0;
+
+						while(Check != 1)
+						{
+							WaveGenSet(1);
+
+							Check = CheckCond(1000);
+							if(attempt == 5)
+							{
+								gui32Error |= WAVE_GEN_FAIL;
+								break;
+							}
+
+							if(Check != 1)
+							{
+								InitWaveGen(1, 1000);
+								attempt++;
+							}
+						}
+
+						CalConductivity_alt[i] = ConductivityMovingAvg(1000);		// uV
+
+						UARTprintf("Cond Raw 1kHz: %d\n", (int) (CalConductivity_alt[i] * 1000));
+
+						WaveGenSet(0);
+
+						InitWaveGen(0, 5000);	// Change frequency back to 5kHz
+					}
+
+					// Set low current range
+					// 10.7 uApp R = 309k + 499k = 808k
+					IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 0);
+					IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 0);
+
+					uint8_t Check = 0;
+					while(Check != 1)
+					{
+						WaveGenSet(1);
+
+						Check = CheckCond(COND_FREQ);
+						if(Check != 1)
+						{
+							InitWaveGen(1, COND_FREQ);
+						}
+					}
+
+					CalConductivity[i] = ConductivityMovingAvg(COND_FREQ);
+					UARTprintf("Low Cond Raw: %d\n", (int) (CalConductivity[i] * 1000));
+
+					WaveGenSet(0);	// Turn off waveform generator when switching ranges
+
+
+
+					ConnectMemory(1);
+
+					T_Cond[i] = MeasureTemperature(1);
+					// Perform temperature correction here after calculations for ISEs so we are using the conductivity at temperature, not the adjusted conductivity
+					if(ExtraCondPoints == 0)
+						Conductivity_cal[i] *= (1 + COND_TCOMP_CONDLOW*(T_Cond[i] - 25));	// Multiply because we already have cond at 25 and want it at measured temperature
+					UARTprintf("Temperature: %d C * 1000\n", (int) (T_Cond[i] * 1000));
+				}
+
+				// Push air back into cond cal port before moving to next solution
+				if(BUBBLES_IN_TUBE)
+				{
+					RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
+					PumpVolume(BW, PumpVol_tube_bubble, Speed_Fast, 1);
+					userDelay(valve_delay, 1);
+				}
+
+				if(PURGE_SAMPLE)
+				{
+					UARTprintf("Purging sample tube by pushing air backwards into it\n");
+					RunValveToPossition_Bidirectional(V_AIR, VALVE_STEPS_PER_POSITION);
+					PumpVolume(FW, PumpVol_sample_rinse + PumpVol_Sample_Prime + 33.6, Speed_Fast, 0);
+					userDelay(valve_delay_after_air, 0);
+					RunValveToPossition_Bidirectional(V_SAMP, VALVE_STEPS_PER_POSITION);
+					PumpVolume(BW, PumpVol_Sample_Prime, Speed_Fast, 0);
+					userDelay(valve_delay, 0);
+				}
+
+				//
+				// Conductivity mid point calibrant
+				//
+				UARTprintf("Fill sample vial with mid conductivity calibrant\n");
+
+				BuzzerSound(400);
+				SetLED(BLUE_BUTTON_BLINK, 1);
+				while(GPIOPinRead(GPIO_PORTF_BASE, GPIO_PIN_3) == GPIO_PIN_3);
+				while(GPIOPinRead(GPIO_PORTF_BASE, GPIO_PIN_3) == 0);
+				SetLED(BLUE_BUTTON_BLINK, 0);
+
+				if((gui32Error & 0) == 0)
+				{
+					update_Status(STATUS_TEST, OPERATION_TEST_RINSE);
+					UARTprintf("Pumping mid point conductivity calibrant... \n");
+
+					RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);
+					FindPossitionZeroPump();
+					for (i = 0; i < Number_of_bubbles_Cond; i++) // Loop over air/solution cycle 3 times for single solution
+					{
+						RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
+						PumpVolume(FW, PumpVol_air_bubble, Speed_Fast, 1);
+						if(i == (Number_of_bubbles_Cond - 1))
+							PumpVolume(FW, PumpVol_Large_air_bubble, Speed_Fast, 1);
+						userDelay(valve_delay, 1);
+						RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
+						if(i == 0 && BUBBLES_IN_TUBE)
+							PumpVolume(FW, PumpVol_tube_bubble, Speed_Fast, 1);
+						PumpVolume(FW, PumpVol_Solution, Speed_Fast, 1);
+						if(i != (Number_of_bubbles_Cond - 1))
+							userDelay(valve_delay, 1);
+					}
+					PumpVolume(FW, PumpVol_Rinse, Speed_Fast, 1);
+					userDelay(valve_delay, 1);
+					RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
+					PumpVolume(FW, PumpVol_plug, Speed_Fast, 1);
+				}
+
+				float Mid_CalConductivity[3] = {0,0,0};
+				float Mid_CalConductivity_alt[3] = {0,0,0};
+				float Mid_T_Cond[3] = {0,0,0};
+				float Mid_Conductivity_cal[3] = {1000, 1000, 1000};	// {1077, 1077, 1077};
+
+				// Measure conductivity
+				// Set RE and CE floating and close RE/CE loop for conductivity
+				IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWA, 1);
+				IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWB, 0);
+
+				// Set mid current range
+				// 20 uApp R = 430k
+				IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 1);
+				IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 1);
+
+				ExtraCondPoints = 3;
+				for(i = 0; i < 3; i++)
+				{
+					if(i > 0 && ExtraCondPoints > 0)
+					{
+						i = 0;
+						ExtraCondPoints--;
+					}
+
+					RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
+					PumpVolume(FW, PumpVol_Rinse + PumpVol_Solution, Speed_Fast, 1);
+					userDelay(valve_delay, 1);
+					RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
+					PumpVolume(FW, PumpVol_plug, Speed_Fast, 1);
+
+					ConnectMemory(0);
+
+					// Set mid current range
+					// 20 uApp R = 430k
+					IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 1);
+					IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 1);
+
+					if(gABoard >= ARV1_0B)
+					{
+						InitWaveGen(0, 1000);	// Change frequency to 1kHz
+
+						// Set mid current range
+						// 20 uApp R = 430k
+						IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 1);
+						IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 1);
+
+						uint8_t Check = 0, attempt = 0;
+
+						while(Check != 1)
+						{
+							WaveGenSet(1);
+
+							Check = CheckCond(1000);
+							if(attempt == 5)
+							{
+								gui32Error |= WAVE_GEN_FAIL;
+								break;
+							}
+
+							if(Check != 1)
+							{
+								InitWaveGen(1, 1000);
+								attempt++;
+							}
+						}
+
+						Mid_CalConductivity_alt[i] = ConductivityMovingAvg(1000);		// uV
+
+						UARTprintf("Cond Raw 1kHz: %d\n", (int) (Mid_CalConductivity_alt[i] * 1000));
+
+						WaveGenSet(0);
+
+						InitWaveGen(0, 5000);	// Change frequency back to 5kHz
+					}
+
+					// Set mid current range
+					// 20 uApp R = 430k
+					IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 1);
+					IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 1);
+
+					uint8_t Check = 0;
+					while(Check != 1)
+					{
+						WaveGenSet(1);
+
+						Check = CheckCond(COND_FREQ);
+						if(Check != 1)
+						{
+							InitWaveGen(1, COND_FREQ);
+						}
+					}
+
+					Mid_CalConductivity[i] = ConductivityMovingAvg(COND_FREQ);
+					UARTprintf("Cond Raw: %d\n", (int) (Mid_CalConductivity[i] * 1000));
+
+					WaveGenSet(0);	// Turn off waveform generator when switching ranges
+
+					ConnectMemory(1);
+
+					Mid_T_Cond[i] = MeasureTemperature(1);
+
+					if(ExtraCondPoints == 0)
+						Mid_Conductivity_cal[i] *= (1 + 0.02 *(Mid_T_Cond[i] - 25));	// Multiply because we already have cond at 25 and want it at measured temperature
+					UARTprintf("Temperature: %d C * 1000\n", (int) (Mid_T_Cond[i] * 1000));
+				}
+
+				//
+				// Conductivity high point calibrant
+				//
+				UARTprintf("Fill sample vial with high conductivity calibrant\n");
+
+				BuzzerSound(400);
+				SetLED(BLUE_BUTTON_BLINK, 1);
+				while(GPIOPinRead(GPIO_PORTF_BASE, GPIO_PIN_3) == GPIO_PIN_3);
+				while(GPIOPinRead(GPIO_PORTF_BASE, GPIO_PIN_3) == 0);
+				SetLED(BLUE_BUTTON_BLINK, 0);
+
+				if((gui32Error & 0) == 0)
+				{
+					update_Status(STATUS_TEST, OPERATION_TEST_RINSE);
+					UARTprintf("Pumping high point conductivity calibrant... \n");
+
+					RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);
+					FindPossitionZeroPump();
+					for (i = 0; i < Number_of_bubbles_Cond; i++) // Loop over air/solution cycle 3 times for single solution
+					{
+						RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
+						PumpVolume(FW, PumpVol_air_bubble, Speed_Fast, 1);
+						if(i == (Number_of_bubbles_Cond - 1))
+							PumpVolume(FW, PumpVol_Large_air_bubble, Speed_Fast, 1);
+						userDelay(valve_delay, 1);
+						RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
+						if(i == 0 && BUBBLES_IN_TUBE)
+							PumpVolume(FW, PumpVol_tube_bubble, Speed_Fast, 1);
+						PumpVolume(FW, PumpVol_Solution, Speed_Fast, 1);
+						if(i != (Number_of_bubbles_Cond - 1))
+							userDelay(valve_delay, 1);
+					}
+					PumpVolume(FW, PumpVol_Rinse, Speed_Fast, 1);
+					userDelay(valve_delay, 1);
+					RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
+					PumpVolume(FW, PumpVol_plug, Speed_Fast, 1);
+				}
+
+				float High_CalConductivity[3] = {0,0,0};
+				float High_CalConductivity_alt[3] = {0,0,0};
+				float High_T_Cond[3] = {0,0,0};
+				float High_Conductivity_cal[3] = {2000, 2000, 2000};
+
+				// Measure conductivity
+				// Set RE and CE floating and close RE/CE loop for conductivity
+				IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWA, 1);
+				IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWB, 0);
+
+				// Set high current range
+				// 45 uApp R = 180k
+				IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 0);
+				IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 1);
+
+				ExtraCondPoints = 3;
+				for(i = 0; i < 3; i++)
+				{
+					if(i > 0 && ExtraCondPoints > 0)
+					{
+						i = 0;
+						ExtraCondPoints--;
+					}
+
+					RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
+					PumpVolume(FW, PumpVol_Rinse + PumpVol_Solution, Speed_Fast, 1);
+					userDelay(valve_delay, 1);
+					RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
+					PumpVolume(FW, PumpVol_plug, Speed_Fast, 1);
+
+					ConnectMemory(0);
+
+					if(gABoard >= ARV1_0B)
+					{
+						InitWaveGen(0, 1000);	// Change frequency to 1kHz
+
+						// Set high current range
+						// 45 uApp R = 180k
+						IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 0);
+						IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 1);
+
+						uint8_t Check = 0, attempt = 0;
+
+						while(Check != 1)
+						{
+							WaveGenSet(1);
+
+							Check = CheckCond(1000);
+							if(attempt == 5)
+							{
+								gui32Error |= WAVE_GEN_FAIL;
+								break;
+							}
+
+							if(Check != 1)
+							{
+								InitWaveGen(1, 1000);
+								attempt++;
+							}
+						}
+
+						High_CalConductivity_alt[i] = ConductivityMovingAvg(1000);		// uV
+
+						UARTprintf("Cond Raw 1kHz: %d\n", (int) (High_CalConductivity_alt[i] * 1000));
+
+						WaveGenSet(0);
+
+						InitWaveGen(0, 5000);	// Change frequency back to 5kHz
+					}
+
+					// Set high current range
+					// 45 uApp R = 180k
+					IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 0);
+					IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 1);
+
+					uint8_t Check = 0;
+					while(Check != 1)
+					{
+						WaveGenSet(1);
+
+						Check = CheckCond(COND_FREQ);
+						if(Check != 1)
+						{
+							InitWaveGen(1, COND_FREQ);
+						}
+					}
+
+					High_CalConductivity[i] = ConductivityMovingAvg(COND_FREQ);
+					UARTprintf("Cond Raw: %d\n", (int) (High_CalConductivity[i] * 1000));
+
+					WaveGenSet(0);	// Turn off waveform generator when switching ranges
+
+					ConnectMemory(1);
+
+					High_T_Cond[i] = MeasureTemperature(1);
+					// Perform temperature correction here after calculations for ISEs so we are using the conductivity at temperature, not the adjusted conductivity
+					if(ExtraCondPoints == 0)
+						High_Conductivity_cal[i] *= (1 + 0.02 *(High_T_Cond[i] - 25));	// Multiply because we already have cond at 25 and want it at measured temperature
+					UARTprintf("Temperature: %d C * 1000\n", (int) (High_T_Cond[i] * 1000));
+				}
+
+				float Conductivity_low_cal = (Conductivity_cal[0] + Conductivity_cal[1] + Conductivity_cal[2]) / 3.0;
+				float Conductivity_reading_low = (CalConductivity[0] + CalConductivity[1] + CalConductivity[2]) / 3.0;
+				float Conductivity_reading_low_alt = (CalConductivity_alt[0] + CalConductivity_alt[1] + CalConductivity_alt[2]) / 3.0;
+
+				float Conductivity_mid_cal = (Mid_Conductivity_cal[0] + Mid_Conductivity_cal[1] + Mid_Conductivity_cal[2]) / 3.0;
+				float Conductivity_reading_mid = (Mid_CalConductivity[0] + Mid_CalConductivity[1] + Mid_CalConductivity[2]) / 3.0;
+				float Conductivity_reading_mid_alt = (Mid_CalConductivity_alt[0] + Mid_CalConductivity_alt[1] + Mid_CalConductivity_alt[2]) / 3.0;
+
+				float Conductivity_high_cal = (High_Conductivity_cal[0] + High_Conductivity_cal[1] + High_Conductivity_cal[2]) / 3.0;
+				float Conductivity_reading_high = (High_CalConductivity[0] + High_CalConductivity[1] + High_CalConductivity[2]) / 3.0;
+				float Conductivity_reading_high_alt = (High_CalConductivity_alt[0] + High_CalConductivity_alt[1] + High_CalConductivity_alt[2]) / 3.0;
+
+				float Low_Current, Mid_Current, High_Current;
+				EEPROMRead((uint32_t *) &Low_Current, OFFSET_COND_I_LOW, 4);
+				EEPROMRead((uint32_t *) &Mid_Current, OFFSET_COND_I_MID, 4);
+				EEPROMRead((uint32_t *) &High_Current, OFFSET_COND_I_HIGH, 4);
+
+				if(Low_Current != Low_Current)
+					Low_Current = 10.76 * 0.795;	// Average from circuits before ARV1_0B
+				if(Mid_Current != Mid_Current)
+					Mid_Current = 19.89 * 0.8;	// Average from circuits before ARV1_0B
+				if(High_Current != High_Current)
+					High_Current = 43.57 * .812;	// Average from circuits before ARV1_0B
+
+				float Low_Current_alt, Mid_Current_alt, High_Current_alt;
+				EEPROMRead((uint32_t *) &Low_Current_alt, OFFSET_COND_ALT_I_LOW, 4);
+				EEPROMRead((uint32_t *) &Mid_Current_alt, OFFSET_COND_ALT_I_MID, 4);
+				EEPROMRead((uint32_t *) &High_Current_alt, OFFSET_COND_ALT_I_HIGH, 4);
+
+				if(Low_Current_alt != Low_Current_alt)
+					Low_Current_alt = Low_Current * 1.22;	// Because of low pass filter the frequency at 1kHz will be ~22% higher than 5kHz
+				if(Mid_Current_alt != Mid_Current_alt)
+					Mid_Current_alt = Mid_Current * 1.22;	// Because of low pass filter the frequency at 1kHz will be ~22% higher than 5kHz
+				if(High_Current_alt != High_Current_alt)
+					High_Current_alt = High_Current * 1.22;	// Because of low pass filter the frequency at 1kHz will be ~22% higher than 5kHz
+
+				Cond_Slope = (High_Current*1000000/Conductivity_reading_high - Mid_Current*1000000/Conductivity_reading_mid)/((Conductivity_high_cal - Conductivity_mid_cal));
+				float Cond_Slope_alt;
+				if(gABoard >= ARV1_0B)
+					Cond_Slope_alt = ((1000000 * High_Current_alt)/Conductivity_reading_high_alt - (1000000 * Mid_Current_alt)/Conductivity_reading_mid_alt)/((Conductivity_high_cal - Conductivity_mid_cal));
+
+				UARTprintf("Low calibrant:\n");
+				UARTprintf("Temperature Corrected conductivity: %d, %d, %d uS/cm * 1000\n", (int) (Conductivity_cal[0] * 1000), (int) (Conductivity_cal[1] * 1000), (int) (Conductivity_cal[2] * 1000));
+				UARTprintf("Average temperature corrected conductivity: %d uS/cm * 1000\n", (int) (Conductivity_low_cal * 1000));
+				UARTprintf("Average conductivity reading: %d\n", (int) (Conductivity_reading_low * 1000));
+
+
+				Conductivity_reading_low = Low_Current / Conductivity_reading_low;	// Current adjust this reading so the factory calibration holds across Roam units
+				if(gABoard >= ARV1_0B)
+					UARTprintf("1000 Hz Current adjusted conductivity reading: %d\n", (int) (Low_Current_alt * 1000000 / Conductivity_reading_low_alt * 1000));
+				UARTprintf("%d Hz Current adjusted conductivity reading: %d\n", COND_FREQ, (int) (Conductivity_reading_low * 1000000 * 1000));
+
+				UARTprintf("\nMid calibrant:\n");
+				UARTprintf("Temperature Corrected conductivity: %d, %d, %d uS/cm * 1000\n", (int) (Mid_Conductivity_cal[0] * 1000), (int) (Mid_Conductivity_cal[1] * 1000), (int) (Mid_Conductivity_cal[2] * 1000));
+				UARTprintf("Average temperature corrected conductivity: %d uS/cm * 1000\n", (int) (Conductivity_mid_cal * 1000));
+				UARTprintf("Average conductivity reading: %d\n", (int) (Conductivity_reading_mid * 1000));
+
+				if(gABoard >= ARV1_0B)
+					UARTprintf("1000 Hz Current adjusted conductivity reading: %d\n", (int) (Mid_Current_alt * 1000000 / Conductivity_reading_mid_alt * 1000));
+				UARTprintf("%d Hz Current adjusted conductivity reading: %d\n", COND_FREQ, (int) (Mid_Current * 1000000 / Conductivity_reading_mid * 1000));
+
+				UARTprintf("\nHigh calibrant:\n");
+				UARTprintf("Temperature Corrected conductivity: %d, %d, %d uS/cm * 1000\n", (int) (High_Conductivity_cal[0] * 1000), (int) (High_Conductivity_cal[1] * 1000), (int) (High_Conductivity_cal[2] * 1000));
+				UARTprintf("Average temperature corrected conductivity: %d uS/cm * 1000\n", (int) (Conductivity_high_cal * 1000));
+				UARTprintf("Average conductivity reading: %d\n", (int) (Conductivity_reading_high * 1000));
+
+				if(gABoard >= ARV1_0B)
+					UARTprintf("1000 Hz Current adjusted conductivity reading: %d\n", (int) (High_Current_alt * 1000000 / Conductivity_reading_high_alt * 1000));
+				UARTprintf("%d Hz Current adjusted conductivity reading: %d\n", COND_FREQ, (int) (High_Current * 1000000 / Conductivity_reading_high * 1000));
+
+				if(gABoard >= ARV1_0B)
+					UARTprintf("\n1000 Hz Factory Conductivity Slope:\t%d\n", (int) (Cond_Slope_alt * 1000));
+				UARTprintf("%d Hz Factory Conductivity Slope:\t%d\n", COND_FREQ, (int) (Cond_Slope * 1000));
+
+				if(Cond_Slope > 0.1 && Cond_Slope < 0.3)
+				{
+					UARTprintf("\nConductivity Factory Cal check passed, saving to memory\n");
+					MemoryWrite(PAGE_FACTORY_CAL, OFFSET_COND_LOW_POINT_CAL, 4, (uint8_t *) &Conductivity_low_cal);
+					MemoryWrite(PAGE_FACTORY_CAL, OFFSET_COND_READ_LOW_POINT, 4, (uint8_t *) &Conductivity_reading_low);
+
+					if(gABoard >= ARV1_0B)
+					{
+						MemoryWrite(PAGE_FACTORY_CAL, OFFSET_FACTORY_COND_SLOPE, 4, (uint8_t *) &Cond_Slope_alt);	// 1 kHz
+						MemoryWrite(PAGE_FACTORY_CAL, OFFSET_FACTORY_COND_SLOPE_ALT, 4, (uint8_t *) &Cond_Slope);	// 5 kHz
+					}
+					else
+						MemoryWrite(PAGE_FACTORY_CAL, OFFSET_FACTORY_COND_SLOPE, 4, (uint8_t *) &Cond_Slope);	// 1 kHz
+				}
+				else
+				{
+					UARTprintf("Conductivity Factory Cal check failed, NOT saving to memory\n");
+					FactoryCalCheck = 0;
+					CondCheck = 0;
+				}
+
+				// Push air back into cond cal port before moving to next solution
+				if(BUBBLES_IN_TUBE)
+				{
+					RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
+					PumpVolume(BW, PumpVol_tube_bubble, Speed_Fast, 1);
+					userDelay(valve_delay, 1);
+				}
+
+				if(PURGE_SAMPLE)
+				{
+					UARTprintf("Purging sample tube by pushing air backwards into it\n");
+					RunValveToPossition_Bidirectional(V_AIR, VALVE_STEPS_PER_POSITION);
+					PumpVolume(FW, PumpVol_sample_rinse + PumpVol_Sample_Prime + 33.6, Speed_Fast, 0);
+					userDelay(valve_delay_after_air, 0);
+					RunValveToPossition_Bidirectional(V_SAMP, VALVE_STEPS_PER_POSITION);
+					PumpVolume(BW, PumpVol_Sample_Prime, Speed_Fast, 0);
+					userDelay(valve_delay, 0);
+				}
+			}
+
+			// Set RE and CE floating and close RE/CE loop
+			IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWA, 1);
+			IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWB, 0);
+
+			if(CONDITION_AMPS)
+			{
+				// Prime sample tube before test
+				UARTprintf("Put sample tube in 5 ppm Cl2 and press button\n");
+
+				BuzzerSound(400);
+				SetLED(BLUE_BUTTON_BLINK, 1);
+				while(GPIOPinRead(GPIO_PORTF_BASE, GPIO_PIN_3) == GPIO_PIN_3);
+				while(GPIOPinRead(GPIO_PORTF_BASE, GPIO_PIN_3) == 0);
+				SetLED(BLUE_BUTTON_BLINK, 0);
+
+				UARTprintf("Pumping for 5 minutes to pre-bleach... \n");
+				RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
+				PumpVolume(FW, PumpVol_Sample_Prime + PumpVol_sample_rinse, Speed_Fast, 1);
+
+				// Slowly pump sample for 5 minutes
+				PumpStepperRunTimeSpeed_AbortReady(FW, 150, 6000);
+				PumpStepperRunTimeSpeed_AbortReady(FW, 150, 6000);
+//				userDelay(300000, 1);
+
+				if(PURGE_SAMPLE)
+				{
+					UARTprintf("Purging sample tube by pushing air backwards into it\n");
+					RunValveToPossition_Bidirectional(V_AIR, VALVE_STEPS_PER_POSITION);
+					PumpVolume(FW, PumpVol_sample_rinse + PumpVol_Sample_Prime + 33.6, Speed_Fast, 0);
+					userDelay(valve_delay_after_air, 0);
+					RunValveToPossition_Bidirectional(V_SAMP, VALVE_STEPS_PER_POSITION);
+					PumpVolume(BW, PumpVol_Sample_Prime, Speed_Fast, 0);
+					userDelay(valve_delay, 0);
+				}
+
+				TestValveDrift();
+			}
+
+			int k;
+			// Create variables for Cl mixing
+			float Cl_nA_FCl[9] = {0,0,0,0,0,0,0,0,0};
+			float Cl_nA_TCl[9] = {0,0,0,0,0,0,0,0,0};
+			float T_Samp_B2 = T_assume;
+			float T_Samp_B1 = T_assume;
+//			float Amp_Voltage_Set = 470;
+			float Amp_Voltage_Set = 470 - REF_DRIFT;
+
+//			uint8_t ExtraStartRuns = 2;
+
+			if(CONDITION_AMPS)
+			for(k = 0; k < 2; k++)
+			{
+				// Prime sample tube before test
+				UARTprintf("Fill sample vial with 5 ppm chlorine for dummy runs and press button!\n");
+
+				if(k == 1)
+				{
+					BuzzerSound(400);
+					SetLED(BLUE_BUTTON_BLINK, 1);
+					while(GPIOPinRead(GPIO_PORTF_BASE, GPIO_PIN_3) == GPIO_PIN_3);
+					while(GPIOPinRead(GPIO_PORTF_BASE, GPIO_PIN_3) == 0);
+					SetLED(BLUE_BUTTON_BLINK, 0);
+				}
+
+				UARTprintf("Priming sample... \n");
+				RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
+				PumpVolume(FW, PumpVol_Sample_Prime, Speed_Fast, 1);
+				userDelay(valve_delay, 1);
+
+				// Push air back into sample port before moving to next solution
+				if(BUBBLES_IN_TUBE)
+				{
+					RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
+					PumpVolume(BW, PumpVol_tube_bubble, Speed_Fast, 1);
+					userDelay(valve_delay, 1);
+				}
+
+
+				//
+				// Clean amperometrics
+				//
+				if((gui32Error & 0) == 0)
+				{
+					// Pump in rinse over amperometrics for cleaning
+					RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);
+					FindPossitionZeroPump();
+					userDelay(valve_delay_after_air, 1);
+					UARTprintf("Pumping cleaning solution to clean amperometrics!\n");
+					if(ISEs.Config == PH_CL_CART)
+						RunValveToPossition_Bidirectional_AbortReady(V_RINSE, VALVE_STEPS_PER_POSITION);
+					else
+						RunValveToPossition_Bidirectional_AbortReady(V_CLEAN, VALVE_STEPS_PER_POSITION);
+
+					if(BUBBLES_IN_TUBE)
+						PumpVolume(FW, PumpVol_tube_bubble, Speed_Fast, 1);
+					PumpVolume(FW, PumpVol_Clean, Speed_Fast, 1);
+					userDelay(valve_delay, 1);
+					RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
+					PumpVolume(FW, PumpVol_air_bubble + PumpVol_tube_bubble, Speed_Fast, 1);
+					userDelay(valve_delay_after_air, 1);
+					if(ISEs.Config == PH_CL_CART)
+						RunValveToPossition_Bidirectional_AbortReady(V_RINSE, VALVE_STEPS_PER_POSITION);
+					else
+						RunValveToPossition_Bidirectional_AbortReady(V_CLEAN, VALVE_STEPS_PER_POSITION);
+					PumpVolume(BW, PumpVol_tube_bubble, Speed_Fast, 1);
+					userDelay(valve_delay, 1);
+					RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);		// Always start with air purge
+					PumpVolume(FW, PumpVol_Clean_center, Speed_Fast, 1);
+
+					SleepValve();
+
+#ifdef CC_CURRENT_LIMITED
+						CleanAmperometrics_CurrentLimited(0, 0, 0, OXIDE_REBUILD_TYPE);
+#else
+						CleanAmperometrics(0, 0, 0, OXIDE_REBUILD_TYPE);
+#endif
+				}
+
+				if((gui32Error & 0) == 0)
+					if(CONDITION_AMPS)
+					{
+						update_Status(STATUS_TEST, OPERATION_SAMPLE_B1);
+
+						uint8_t mixing_index = 0;
+						uint8_t in_range = 0;	// Set once pH mixing gets into correct range
+
+						while(in_range == 0 && mixing_index < MAX_TIMES_TO_MIX && (gui32Error & 0) == 0)
+						{
+							if((gui32Error & 0) == 0)
+							{
+								// Prime a little B1 before test to clear out any contamination
+								UARTprintf("Priming B1... \n");
+								RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);
+								PumpVolume(FW, PumpVol_air_bubble, Speed_Fast, 1);
+								userDelay(valve_delay_after_air, 1);
+								RunValveToPossition_Bidirectional_AbortReady(V_B1, VALVE_STEPS_PER_POSITION);
+								PumpVolume(FW, PumpVol_tube_prime_buffers, Speed_Metering, 1);
+								userDelay(valve_delay, 1);
+							}
+
+							RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
+							if(mixing_index == 0)
+							{
+								PumpVolume(FW, PumpVol_sample_rinse, Speed_Fast, 1);
+							}
+	//						FindPossitionZeroPump();
+							userDelay(valve_delay, 1);
+
+							mixing_index++;
+
+							//
+							// FCl, B1 Mixing
+							//
+							UARTprintf("Mixing %d uL of B1... \n", (int) PumpVol_Buffer);
+							RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Move valve to air
+
+							if(CL_MIX_IN_AIR)
+							{
+								UARTprintf("Pumping large air plug so arrays and reference are uncovered during mixing\n");
+								PumpVolume(FW, PumpVol_air_bubble + PumpVol_Clean + 16.8, Speed_Fast, 1);
+							}
+							else
+								PumpVolume(FW, PumpVol_air_bubble, Speed_Fast, 1);
+							FindPossitionZeroPump();
+							userDelay(valve_delay_after_air, 1);
+
+							// Pump buffer and solution
+							RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);		// Move valve to sample
+							PumpStepperRunStepSpeed_AbortReady(FW, Steps_PreB1, Speed_Metering);
+							userDelay(valve_delay_metering, 1);
+							RunValveToPossition_Bidirectional_AbortReady(V_B1, VALVE_STEPS_PER_POSITION);		// Move valve to buffer 1
+							PumpVolume(FW, PumpVol_Buffer, Speed_Metering, 1);
+							userDelay(valve_delay_metering, 1);
+
+							RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);		// Move valve to sample
+							PumpVolume(FW, PumpVol_PostB1, Speed_Fast, 1);
+							userDelay(valve_delay, 1);
+							RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Move valve to air
+							PumpVolume(FW, PumpVol_air_bubble /*+ PumpVol_tube_bubble*/, Speed_Fast, 1);
+//							userDelay(valve_delay_after_air, 1);
+
+//							RunValveToPossition_Bidirectional_AbortReady(V_B1, VALVE_STEPS_PER_POSITION);		// Move valve to buffer 1
+//							PumpVolume(BW, PumpVol_tube_bubble, Speed_Metering, 1);
+//							userDelay(valve_delay_metering, 1);
+
+							//						RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);		// Move valve to air
+							//						PumpStepperRunStepSpeed_AbortReady(FW, Steps_follow_B1, Speed_placing);
+							//						userDelay(valve_delay_metering, 1);
+
+							RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Move valve to air
+							PumpStepperMix(BW, Steps_cycles, Speed_Fast, mix_cycles);
+							//						for(i = 0; i < mix_cycles; i++)
+							//						{
+							//							PumpStepperRunStepSpeed_AbortReady(BW, Steps_cycles, Speed_mixing);
+							//							PumpStepperRunStepSpeed_AbortReady(FW, Steps_cycles, Speed_mixing);
+							//						}
+
+							userDelay(diffusion_time, 1);
+
+//							RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);		// Move valve to air
+							PumpVolume(FW, PumpVol_center, Speed_Fast, 1);
+
+							SleepValve();
+
+							if((gui32Error & 0) == 0)
+							{
+								if(1)
+								{
+//									UARTprintf("pH in correct range, running chlorine test!\n");
+									in_range = 1;
+									ConnectMemory(0);
+
+									// Read ADC here to make sure it is working, I've seen ADC have problem during Cl read causing analog board to reset which threw off
+									// Cl reading, by reading here hopefully we catch the problem and fix it before doing anything to the amperometric arrays
+									ADCReadAvg(0, ADC4_CS_B, 5);
+
+									// Turn on short and off parallel resistor to allow large current flows
+									IO_Ext_Set(IO_EXT2_ADDR, 3, WORK_EL_HIGH_CURRENT, 1);	// Parallel switch must be on with short switch to work
+									IO_Ext_Set(IO_EXT2_ADDR, 2, WORK_EL_SHORT, 1);
+									if(HIGH_RANGE)
+										IO_Ext_Set(IO_EXT2_ADDR, 3, WORK_EL_MID_CURRENT, 1);
+
+									// Set reference for amperometric mode
+									IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWA, 1);
+									IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWB, 1);
+									// Connect all electrodes together for measuring
+									IO_Ext_Set(IO_EXT1_ADDR, 3, WORK_EL_SWA, 1);
+									IO_Ext_Set(IO_EXT1_ADDR, 3, WORK_EL_SWB, 1);
+
+									DACVoltageSet(0, Amp_Voltage_Set, true);
+
+									userDelay(3000, 1);	// Delay 3 seconds to let large current flow through before switching in reading resistor
+
+									IO_Ext_Set(IO_EXT2_ADDR, 3, WORK_EL_HIGH_CURRENT, 0);
+									IO_Ext_Set(IO_EXT2_ADDR, 2, WORK_EL_SHORT, 0);	// Turn off short switch
+									if(HIGH_RANGE)
+										Cl_nA_FCl[k] = *(CurrentTimeRead(0, ADC4_CS_B, 12, (int) Amp_Voltage_Set, 2, .005) + 1);	// nA
+									else
+										Cl_nA_FCl[k] = *(CurrentTimeRead(0, ADC4_CS_B, 12, (int) Amp_Voltage_Set, 0, .005) + 1);	// nA
+
+									// Let the working electrodes float when not measuring
+									IO_Ext_Set(IO_EXT1_ADDR, 3, WORK_EL_SWA, 0);
+									IO_Ext_Set(IO_EXT1_ADDR, 3, WORK_EL_SWB, 0);
+									if(HIGH_RANGE)
+										IO_Ext_Set(IO_EXT2_ADDR, 3, WORK_EL_MID_CURRENT, 0);
+									DACVoltageSet(0, 0, true);
+
+									ConnectMemory(1);
+
+									UARTprintf("FCl raw: %d nA * 1000\n", (int) (Cl_nA_FCl[k] * 1000));
+
+									T_Samp_B1 = MeasureTemperature(1);
+
+//									Cl_nA_FCl[k] /= 0.015 * T_Samp_B1 + 0.622;	// Normalize current to 25 C
+									Cl_nA_FCl[k] /= 0.013 * T_Samp_B1 + 0.668;	// Normalize current to 25 C Updated 3/16/2020
+									UARTprintf("FCl raw normalized to 25C: %d nA * 1000\n", (int) (Cl_nA_FCl[k] * 1000));
+
+//									float Conductivity_B1 = MeasureConductivity(Cond_EEP_Rinse, Cond_EEP_Cal_2, 0);
+									UARTprintf("Temperature of mix: %d C * 1000\n", (int) (T_Samp_B1 * 1000));
+//									UARTprintf("Conductivity of B1 mix: %d uS/cm * 1000\n", (int) (Conductivity_B1 * 1000));
+
+//									if(Conductivity_B1 < 4000)
+//									{
+//										gui32Error |= FCL_MIX_OUT_OF_RANGE;	// Update error
+//										update_Error();
+//									}
+								}
+							}
+
+							// Leave RE and CE floating
+							IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWA, 1);		// RE floating
+							IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWB, 0);		// CE floating
+
+							RunValveToPossition_Bidirectional_AbortReady(V_B1, VALVE_STEPS_PER_POSITION);		// Move valve to buffer 1
+							PumpVolume(BW, PumpVol_tube_bubble, Speed_Metering, 1);
+							userDelay(valve_delay_metering, 1);
+						}
+					}
+
+
+				//
+				// TCL, B2
+				//
+				if((gui32Error & 0) == 0)
+					if(CONDITION_AMPS)
+					{
+						update_Status(STATUS_TEST, OPERATION_SAMPLE_B2);
+
+						uint8_t mixing_index = 0;
+						uint8_t in_range = 0;	// Set once pH mixing gets into correct range
+
+						// Prime B2 at beginning only once, don't push back until after done mixing
+						if((gui32Error & 0) == 0)
+						{
+							// Prime a little C2 before test to clear out any contamination
+							UARTprintf("Priming C2... \n");
+							RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);
+							PumpVolume(FW, PumpVol_air_bubble, Speed_Metering, 1);
+							userDelay(valve_delay_after_air, 1);
+							RunValveToPossition_Bidirectional_AbortReady(V_C2, VALVE_STEPS_PER_POSITION);
+							PumpVolume(FW, PumpVol_tube_prime_buffers, Speed_Metering, 1);
+							userDelay(valve_delay, 1);
+
+	//						// Prime a little B2 before test to clear out any contamination
+	//						UARTprintf("Priming B2... \n");
+	//						RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);
+	//						PumpVolume(FW, PumpVol_air_bubble, Speed_Metering, 1);
+	//						userDelay(valve_delay_after_air, 1);
+	//						RunValveToPossition_Bidirectional_AbortReady(V_B2, VALVE_STEPS_PER_POSITION);
+	//						PumpVolume(FW, PumpVol_tube_prime_buffers, Speed_Metering, 1);
+	//						userDelay(valve_delay, 1);
+						}
+
+						while(in_range == 0 && mixing_index < MAX_TIMES_TO_MIX && (gui32Error & 0) == 0)
+						{
+							RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
+							PumpVolume(FW, 33.6, Speed_Fast, 1);	// Pump a normal sized plug of sample so if B2 or C2 plugs get stuck this sample will catch them
+							userDelay(valve_delay, 1);
+							RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Move valve to air
+							PumpVolume(FW, PumpVol_air_bubble, Speed_Metering, 1);
+							userDelay(valve_delay_after_air, 1);
+							RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
+							PumpVolume(FW, PumpVol_sample_rinse, Speed_Fast, 1);
+	//						FindPossitionZeroPump();
+							userDelay(valve_delay, 1);
+
+							mixing_index++;
+
+							// Pump and mix conditioner with sample
+							UARTprintf("Mixing %d uL of C2... \n", (int) PumpVol_C2);
+
+							RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Move valve to air
+
+							if(CL_MIX_IN_AIR)
+							{
+								UARTprintf("Pumping large air plug so arrays and reference are uncovered during mixing\n");
+								PumpVolume(FW, PumpVol_air_bubble + PumpVol_Clean, Speed_Fast, 1);
+							}
+							else
+								PumpVolume(FW, PumpVol_air_bubble, Speed_Fast, 1);
+							FindPossitionZeroPump();
+							userDelay(valve_delay_after_air, 1);
+
+							RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);	// Move valve to sample
+							PumpStepperRunStepSpeed_AbortReady(FW, Steps_PreB1, Speed_Metering);
+							userDelay(valve_delay_metering, 1);
+							RunValveToPossition_Bidirectional_AbortReady(V_C2, VALVE_STEPS_PER_POSITION);		// Move valve to C2
+							PumpVolume(FW, PumpVol_C2, Speed_Metering, 1);
+							userDelay(valve_delay_metering, 1);
+							RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);	// Move valve to sample
+							PumpVolume(FW, PumpVol_PostB1, Speed_Metering, 1);
+							userDelay(valve_delay_metering, 1);
+							RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Move valve to air
+
+							PumpVolume(FW, PumpVol_air_bubble + PumpVol_tube_bubble, Speed_Metering, 1);
+							userDelay(valve_delay_after_air, 1);
+
+							// Push C2 back a little in valve to help avoid it contaminating B1 and causing us to lose FCl
+							RunValveToPossition_Bidirectional_AbortReady(V_C2, VALVE_STEPS_PER_POSITION);		// Move valve to air
+							PumpVolume(BW, PumpVol_tube_bubble, Speed_Metering, 1);
+							userDelay(valve_delay, 1);
+
+							//						RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);	// Move valve to sample
+							RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Move valve to air
+							PumpVolume(FW, PumpVol_follow_C2, Speed_Fast, 1);
+							//						userDelay(valve_delay_metering, 1);
+
+							PumpStepperMix(BW, Steps_cycles, Speed_Fast, mix_cycles);
+
+							userDelay(diffusion_time, 1);	// Delay to let diffusion happen
+
+							// Prime a little B2 before test to clear out any contamination
+							UARTprintf("Priming B2... \n");
+	//						RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);
+	//						PumpVolume(FW, PumpVol_air_bubble, Speed_Metering, 1);
+	//						userDelay(valve_delay_after_air, 1);
+							RunValveToPossition_Bidirectional_AbortReady(V_B2, VALVE_STEPS_PER_POSITION);
+							PumpVolume(FW, PumpVol_tube_prime_buffers, Speed_Metering, 1);
+							userDelay(valve_delay, 1);
+							RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);
+							PumpVolume(FW, PumpVol_air_bubble, Speed_Metering, 1);
+							userDelay(valve_delay_after_air, 1);
+
+							// Pump mixed conditioner/solution back and mix with buffer
+							UARTprintf("Mixing %d uL of B2... \n", (int) PumpVol_Buffer);
+
+							RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);		// Move valve to sample
+							PumpVolume(BW, PumpVol_back + PumpVol_tube_prime_buffers + PumpVol_air_bubble, Speed_Metering, 1);
+							userDelay(valve_delay, 1);
+							int32_t Steps_to_align_pump = 1000 - (g_PumpStepsTravelled % 1000);
+							if(Steps_to_align_pump == 1000)
+								Steps_to_align_pump = 0;
+							float Volume_to_align_pump = Steps_to_align_pump * PumpVolRev / Pump_Ratio / 1000;
+							// Need to remove the dead spot volume, luckily with the PumpVolume code we will never stop the pump in the dead spot so it'll be an all or nothing calculation
+							if(Steps_to_align_pump > 250)	// Check if we will be passing through dead spot, since we can't be inside the dead spot can merely check against center of dead spot
+								Volume_to_align_pump -= (1 - Pump_Ratio) * PumpVolRev / Pump_Ratio;	// Remove the volume of the dead spot
+							PumpStepperRunStepSpeed_AbortReady(FW, 1000 + Steps_to_align_pump, Speed_Metering);	// Buffer seemed to meter better if the pump was last pumping forward
+							userDelay(valve_delay_metering, 1);
+
+							RunValveToPossition_Bidirectional_AbortReady(V_B2, VALVE_STEPS_PER_POSITION);		// Move valve to buffer 1
+							PumpVolume(FW, PumpVol_Buffer, Speed_Metering, 1);
+							userDelay(valve_delay_metering, 1);
+
+							RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);		// Move valve to sample
+							PumpVolume(FW, PumpVol_forward - Volume_to_align_pump, Speed_Metering, 1);
+							userDelay(valve_delay_metering, 1);
+
+							PumpStepperMix(BW, Steps_cycles, Speed_Fast, mix_cycles);
+
+							userDelay(diffusion_time, 1);	// Delay to let diffusion happen
+
+							PumpVolume(FW, PumpVol_center_B2, Speed_Fast, 1);
+
+							SleepValve();
+
+							if((gui32Error & 0) == 0)
+							{
+//									UARTprintf("pH is in correct range, running chlorine test!\n");
+
+									in_range = 1;
+									ConnectMemory(0);
+
+									// Read ADC here to make sure it is working, I've seen ADC have problem during Cl read causing analog board to reset which threw off
+									// Cl reading, by reading here hopefully we catch the problem and fix it before doing anything to the amperometric arrays
+									ADCReadAvg(0, ADC4_CS_B, 5);
+
+									// Turn on short and off parallel resistor to allow large current flows
+									IO_Ext_Set(IO_EXT2_ADDR, 3, WORK_EL_HIGH_CURRENT, 1);	// Parallel switch must be on with short switch to work
+									IO_Ext_Set(IO_EXT2_ADDR, 2, WORK_EL_SHORT, 1);
+									if(HIGH_RANGE)
+										IO_Ext_Set(IO_EXT2_ADDR, 3, WORK_EL_MID_CURRENT, 1);
+
+									// Set reference for amperometric mode
+									IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWA, 1);
+									IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWB, 1);
+
+									// Connect all electrodes together for measuring
+									IO_Ext_Set(IO_EXT1_ADDR, 3, WORK_EL_SWA, 1);
+									IO_Ext_Set(IO_EXT1_ADDR, 3, WORK_EL_SWB, 1);
+
+									DACVoltageSet(0, Amp_Voltage_Set, true);
+
+									userDelay(3000, 1);			// Let run 3 seconds with short to allow large current at beginning
+
+									IO_Ext_Set(IO_EXT2_ADDR, 3, WORK_EL_HIGH_CURRENT, 0);
+									IO_Ext_Set(IO_EXT2_ADDR, 2, WORK_EL_SHORT, 0);	// Turn off short switch
+									if(HIGH_RANGE)
+										Cl_nA_TCl[k] = *(CurrentTimeRead(0, ADC4_CS_B, 12, (int) Amp_Voltage_Set, 2, .005) + 1);	// nA
+									else
+										Cl_nA_TCl[k] = *(CurrentTimeRead(0, ADC4_CS_B, 12, (int) Amp_Voltage_Set, 0, .005) + 1);	// nA
+
+									// Let the working electrodes float when not measuring
+									IO_Ext_Set(IO_EXT1_ADDR, 3, WORK_EL_SWA, 0);
+									IO_Ext_Set(IO_EXT1_ADDR, 3, WORK_EL_SWB, 0);
+									if(HIGH_RANGE)
+										IO_Ext_Set(IO_EXT2_ADDR, 3, WORK_EL_MID_CURRENT, 0);
+									DACVoltageSet(0, 0, true);
+
+									ConnectMemory(1);
+
+									UARTprintf("TCl raw: %d nA * 1000\n", (int) (Cl_nA_TCl[k] * 1000));
+
+									T_Samp_B2 = MeasureTemperature(1);
+									Cl_nA_TCl[k] /= 0.014 * (T_Samp_B2) + 0.654;
+									UARTprintf("TCl raw normalized to 25C: %d nA * 1000\n", (int) (Cl_nA_TCl[k] * 1000));
+									//								UARTprintf("TCl raw normalized to 25C: %d nA * 1000", (int) ((Cl_nA_TCl / (0.025832 * T_Samp_B2 + 0.354211)) * 1000));
+
+//									float Conductivity_B2 = MeasureConductivity(Cond_EEP_Rinse, Cond_EEP_Cal_2, 0);
+									UARTprintf("Temperature of mix: %d C * 1000\n", (int) (T_Samp_B2 * 1000));
+//									UARTprintf("Conductivity of B2 mix: %d uS/cm * 1000\n", (int) (Conductivity_B2 * 1000));
+
+//									if(Conductivity_B2 < 9000)
+//									{
+//										gui32Error |= TCL_MIX_OUT_OF_RANGE;	// Update error
+//										update_Error();
+//									}
+
+							}
+
+							// RE and CE floating
+							IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWA, 1);		// Leave RE floating
+							IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWB, 0);		// Leave CE floating
+						}
+
+						// After running TCl push B2 buffer back slightly into pouch
+						RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Move valve to air
+						PumpVolume(FW, PumpVol_air_bubble + PumpVol_tube_bubble, Speed_Metering, 1);
+						userDelay(valve_delay_after_air, 1);
+						RunValveToPossition_Bidirectional_AbortReady(V_B2, VALVE_STEPS_PER_POSITION);		// Move valve to air
+						PumpVolume(BW, PumpVol_tube_bubble, Speed_Metering, 1);
+						userDelay(valve_delay, 1);
+					}
+
+
+				if((CONDITION_AMPS) && (gui32Error & 0) == 0)	// Rinse with sample if chlorine was ran, skip if running alkalinity as it will be done there
+				{
+					UARTprintf("Rinsing with sample!\n");
+					PrintTime();
+
+					UARTprintf("Rinsing with one long sample plug!\n");
+					RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
+					PumpVolume(FW, PumpVol_Sample_Prime, Speed_Fast, 1);
+				}
+
+//				if((k == 2 || k == 5 || k == 8) && PURGE_SAMPLE)
+				if(PURGE_SAMPLE)
+				{
+					UARTprintf("Purging sample tube by pushing air backwards into it\n");
+					RunValveToPossition_Bidirectional(V_AIR, VALVE_STEPS_PER_POSITION);
+					PumpVolume(FW, PumpVol_sample_rinse + PumpVol_Sample_Prime + 33.6, Speed_Fast, 1);
+					userDelay(valve_delay_after_air, 1);
+					RunValveToPossition_Bidirectional(V_SAMP, VALVE_STEPS_PER_POSITION);
+					PumpVolume(BW, PumpVol_Sample_Prime, Speed_Fast, 1);
+					userDelay(valve_delay, 1);
+				}
+				else
+				{
+					UARTprintf("Not purging sample tube\n");
+					RunValveToPossition_Bidirectional(V_AIR, VALVE_STEPS_PER_POSITION);
+					PumpVolume(FW, PumpVol_sample_rinse, Speed_Fast, 0);
+					userDelay(valve_delay_after_air, 0);
+					if(BUBBLES_IN_TUBE)
+					{
+						RunValveToPossition_Bidirectional(V_SAMP, VALVE_STEPS_PER_POSITION);
+						PumpVolume(BW, PumpVol_tube_bubble, Speed_Fast, 0);
+						userDelay(valve_delay, 0);
+					}
+				}
+
+				SleepValve();
+
+				TestValveDrift();
+			}	// For all 9 samples
+
+
+			if((CONDITION_AMPS || CALIBRATE_CONDUCTIVITY) /*&& CALIBRATE_ISES*/ == 0)
+			{
+				struct SolutionVals* Sols = FillSolutionStruct();
+				uint8_t Storage_Port;
+				if(ISEs.Config == PH_CL_CART && Sols->Cond_EEP_Cal_2 > 900)	// pH only cartridge with pH 9 clean in place of Cal 2
+				{
+					Storage_Port = V_CAL_2;
+					UARTprintf("Storing from Cal 2 port\n");
+				}
+				else if(Sols->pH_EEP_Clean < 8.5)
+				{
+					Storage_Port = V_RINSE;
+					UARTprintf("Storing from Rinse port\n");
+				}
+				else
+				{
+					Storage_Port = V_CLEAN;
+					UARTprintf("Storing from Clean port\n");
+				}
+
+				//
+				// Flow Chart teal section, post-rinse
+				//
+				PrintTime();
+				if((gui32Error & 0) == 0)
+				{
+					update_Status(STATUS_TEST, OPERATION_TEST_POSTCHECK);
+					UARTprintf("Pumping Postrinse... \n");
+
+					RunValveToPossition_Bidirectional(V_AIR, VALVE_STEPS_PER_POSITION);
+					FindPossitionZeroPump();
+					for (i = 0; i < Number_of_bubbles_Postrinse; i++) // Loop over air/solution cycle 3 times for single solution
+					{
+						RunValveToPossition_Bidirectional(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
+						PumpVolume(FW, PumpVol_air_bubble, Speed_Fast, 0);
+						if(i == (Number_of_bubbles_Postrinse - 1))
+							PumpVolume(FW, PumpVol_Large_air_bubble, Speed_Fast, 0);
+						userDelay(valve_delay_after_air,0);
+
+						RunValveToPossition_Bidirectional(Storage_Port, VALVE_STEPS_PER_POSITION);
+
+						if(i == 0 && BUBBLES_IN_TUBE)
+							PumpVolume(FW, PumpVol_tube_bubble, Speed_Fast, 0);
+						PumpVolume(FW, PumpVol_Solution, Speed_Fast, 0);
+						if(i != (Number_of_bubbles_Postrinse - 1))
+							userDelay(valve_delay, 0);
+
+						if((gui32Error & 0) != 0)	// If abort command is received stop bubble cycle and just fill with rinse
+							break;
+					}
+					if(STORE_HUMID == 1)
+					{
+						UARTprintf("Storing with air over all sensors!\n");
+						RunValveToPossition_Bidirectional(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
+						PumpVolume(FW, PumpVol_Solution + PumpVol_Rinse, Speed_Fast, 0);
+						userDelay(valve_delay, 0);
+						RunValveToPossition_Bidirectional(Storage_Port, VALVE_STEPS_PER_POSITION);
+						PumpVolume(FW, PumpVol_plug, Speed_Fast, 0);
+					}
+					else if(STORE_FRIT_DRY == 1)
+					{
+						UARTprintf("Storing with air over reference!\n");
+						RunValveToPossition_Bidirectional(Storage_Port, VALVE_STEPS_PER_POSITION);
+						PumpVolume(FW, 134.4, Speed_Fast, 0);
+					}
+					else if(STORE_AMPS_DRY == 1)
+					{
+						UARTprintf("Storing air bubble over amperometrics only!\n");
+						RunValveToPossition_Bidirectional(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
+						PumpVolume(FW, PumpVol_air_bubble, Speed_Fast, 0);
+						userDelay(valve_delay, 1);
+						RunValveToPossition_Bidirectional(Storage_Port, VALVE_STEPS_PER_POSITION);
+						PumpVolume(FW, 117.6, Speed_Fast, 0);
+						userDelay(valve_delay, 0);
+
+						// Set RE and CE floating and close RE/CE loop
+						IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWA, 1);
+						IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWB, 0);
+
+						// 10.7 uApp R = 309k + 499k = 808k
+						IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 0);
+						IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 0);
+
+						WaveGenSet(1);
+						userDelay(100, 1);
+						uint8_t signal_doubled = 0;
+						uint8_t checkstep = 0;
+
+						float CondReading = ConductivityMovingAvg(COND_FREQ);
+						float OldReading = CondReading;
+
+						UARTprintf("Reading\t%d\n", (int) CondReading);
+						while(signal_doubled == 0 && checkstep <= 60)
+						{
+							PumpVolume(FW, 2.75, Speed_Fast, 0);
+							checkstep++;
+
+							CondReading = ConductivityMovingAvg(COND_FREQ);
+							UARTprintf("Reading\t%d\n", (int) CondReading);
+
+							if(CondReading/OldReading > 2)
+							{
+								UARTprintf("Conductivity signal doubled! Found storage location!\n");
+								signal_doubled = 1;
+							}
+							OldReading = CondReading;
+
+
+						}
+						if(checkstep > 37)
+						{
+							UARTprintf("Didn't find storage location!\n");
+							PumpVolume(FW, 33.6, Speed_Fast, 0);
+						}
+
+						WaveGenSet(0);
+					}
+					else
+					{
+						UARTprintf("Storing covering everyting!\n");
+						PumpVolume(FW, PumpVol_Rinse, Speed_Fast, 0);
+						if(FLOOD_TO_STORE == 0)
+						{
+							userDelay(valve_delay, 0);
+							RunValveToPossition_Bidirectional(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
+						}
+						PumpVolume(FW, PumpVol_plug, Speed_Fast, 0);
+					}
+
+					// Push air back into rinse port before moving to next solution
+					if(BUBBLES_IN_TUBE)
+					{
+						RunValveToPossition_Bidirectional(V_AIR, VALVE_STEPS_PER_POSITION);
+						PumpVolume(FW, PumpVol_tube_bubble * 4, Speed_Fast, 0);
+						userDelay(valve_delay_after_air, 0);
+						RunValveToPossition_Bidirectional(Storage_Port, VALVE_STEPS_PER_POSITION);
+						PumpVolume(BW, PumpVol_tube_bubble, Speed_Fast, 0);
+						userDelay(valve_delay, 0);
+					}
+
+					SleepValve();
+				}
+
+				gui32Error &= ~ROAM_RESET;	// Turn off ROAM_RESET flag before saving error code
+				UARTprintf("Error Code: 0x%x\n\n", gui32Error);
+				PrintErrors(gui32Error, 1, STATE_MEASUREMENT);
+
+				FindPossitionOneValve();
+			}
+
+			BuzzerSound(400);
+			SetLED(BLUE_BUTTON_BLINK, 1);
+
+			UARTprintf("\n\n");
+
+			// Pause at end to wait for user to empty waste chamber
+			update_Status(STATUS_TEST, OPERATION_TEST_EMPTY_WASTE);
+//			UARTprintf("Empty waste chamber! Press button to continue. \n");
+
+			SetLED(GREEN_BUTTON_BLINK | BLUE_BUTTON_BLINK, 0);
+			if(FactoryCalCheck == 1)
+				SetLED(GREEN_BUTTON | GREEN_BUTTON_V, 1);
+			else
+				SetLED(RED_BUTTON | RED_BUTTON_V, 1);
+
+			if(ThermCheck == 0)
+				UARTprintf("WARNING! Thermistor failed calibration!\n");
+			else if(CALIBRATE_THERM)
+				UARTprintf("Thermistor slope: %d\n", (int) (Therm_corr * 1000));
+
+			if(CondCheck == 0)
+				UARTprintf("WARNING! Conductivity failed calibration!\n");
+			else if(CALIBRATE_CONDUCTIVITY)
+				UARTprintf("Conductivity Slope: %d\n", (int) (Cond_Slope * 1000));
+
+
+			counter = 0;
+			while(GPIOPinRead(GPIO_PORTF_BASE, GPIO_PIN_3) == GPIO_PIN_3 && counter < TIMEOUT)
+			{
+				SysCtlDelay(SysCtlClockGet()/3000);
+				counter++;
+
+				// Break out of loop if another start test command is received
+				if(g_ui32DataRx0[0] == CONTINUE_TEST && g_ulSSI0RXTO > 0)
+				{
+					g_ulSSI0RXTO = 0;
+					break;
+				}
+
+				// Check if state changed, this happens when abort command is received
+				if(g_state != STATE_MEASUREMENT)
+					break;
+			}
+
+//			update_Status(STATUS_TEST, OPERATION_TEST_COMPLETE);
+//			UARTprintf("Test completed! Error Code: 0x%x\n", gui32Error);
+
+			if((gui32Error & (MAX_TESTS_REACHED|CARTRIDGE_EXPIRED|BATTERY_TOO_LOW|I2C_FAILED/*|SPI_FAILED*/|MEMORY_FAILED|USER_CANCELLED)) == 0 || DEMO_UNIT == 1)
+			{
+				update_Status(STATUS_TEST, OPERATION_TEST_COMPLETE);
+//				UARTprintf("Test completed! Error Code: 0x%x\n", gui32Error);
+			}
+			else
+			{
+				update_Status(STATUS_TEST, OPERATION_TEST_FAILED);
+//				UARTprintf("Test failed! Error Code: 0x%x\n", gui32Error);
+			}
+//			update_Status(STATUS_TEST, OPERATION_TEST_COMPLETE);
+			while(GPIOPinRead(GPIO_PORTF_BASE, GPIO_PIN_3) == 0x00);
+
+//			// Wait 3 seconds to let app read status and operation before switching back to idle
+//			SysCtlDelay(SysCtlClockGet());
+
+			counter = 0;
+			while(counter < TIMEOUT && GPIOPinRead(GPIO_PORTF_BASE, GPIO_PIN_3) == GPIO_PIN_3)
+			{
+				SysCtlDelay(SysCtlClockGet()/3000);
+				counter++;
+
+				// Break out of loop if continue test command is received
+				if(g_ui32DataRx0[0] == CONTINUE_TEST && g_ulSSI0RXTO > 0)
+				{
+					g_ulSSI0RXTO = 0;
+					break;
+				}
+
+				// Check if state changed, this happens when abort command is received
+				if(g_state != STATE_MEASUREMENT)
+					break;
+			}
+			while(GPIOPinRead(GPIO_PORTF_BASE, GPIO_PIN_3) == 0);
+
+			g_state = STATE_IDLE;
+			break;
+		}
+#endif
 		default:
 		{
 			g_state = STATE_IDLE;

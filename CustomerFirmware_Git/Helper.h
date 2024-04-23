@@ -172,6 +172,7 @@ struct ISEConfig{
 #define STATE_CALIBRATION		1
 #define STATE_MEASUREMENT		2
 #define STATE_UPDATING			3
+#define STATE_FACTORY_CAL		4
 
 #define LARGE_AIR		1	// 1 if push large air bubble right before plug to be measured, 0 for regular pumping
 #define GND_CE_ON		1	// 0 if not grounding counter, 1 if grounding counter, in WatchISEs function
