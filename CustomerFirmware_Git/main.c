@@ -15019,84 +15019,82 @@ int main(void) {
 //			uint8_t ExtraStartRuns = 2;
 
 			if(CONDITION_AMPS)
-			for(k = 0; k < 2; k++)
-			{
-				// Prime sample tube before test
-				UARTprintf("Fill sample vial with 5 ppm chlorine for dummy runs and press button!\n");
-
-				if(k == 1)
+				for(k = 0; k < 2; k++)
 				{
-					BuzzerSound(400);
-					SetLED(BLUE_BUTTON_BLINK, 1);
-					while(GPIOPinRead(GPIO_PORTF_BASE, GPIO_PIN_3) == GPIO_PIN_3);
-					while(GPIOPinRead(GPIO_PORTF_BASE, GPIO_PIN_3) == 0);
-					SetLED(BLUE_BUTTON_BLINK, 0);
-				}
+					// Prime sample tube before test
+					UARTprintf("Fill sample vial with 5 ppm chlorine for dummy runs and press button!\n");
 
-				UARTprintf("Priming sample... \n");
-				RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
-				PumpVolume(FW, PumpVol_Sample_Prime, Speed_Fast, 1);
-				userDelay(valve_delay, 1);
+					if(k == 1)
+					{
+						BuzzerSound(400);
+						SetLED(BLUE_BUTTON_BLINK, 1);
+						while(GPIOPinRead(GPIO_PORTF_BASE, GPIO_PIN_3) == GPIO_PIN_3);
+						while(GPIOPinRead(GPIO_PORTF_BASE, GPIO_PIN_3) == 0);
+						SetLED(BLUE_BUTTON_BLINK, 0);
+					}
 
-				// Push air back into sample port before moving to next solution
-				if(BUBBLES_IN_TUBE)
-				{
+					UARTprintf("Priming sample... \n");
 					RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
-					PumpVolume(BW, PumpVol_tube_bubble, Speed_Fast, 1);
+					PumpVolume(FW, PumpVol_Sample_Prime, Speed_Fast, 1);
 					userDelay(valve_delay, 1);
-				}
 
-
-				//
-				// Clean amperometrics
-				//
-				if((gui32Error & 0) == 0)
-				{
-					// Pump in rinse over amperometrics for cleaning
-					RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);
-					FindPossitionZeroPump();
-					userDelay(valve_delay_after_air, 1);
-					UARTprintf("Pumping cleaning solution to clean amperometrics!\n");
-					if(ISEs.Config == PH_CL_CART)
-						RunValveToPossition_Bidirectional_AbortReady(V_RINSE, VALVE_STEPS_PER_POSITION);
-					else
-						RunValveToPossition_Bidirectional_AbortReady(V_CLEAN, VALVE_STEPS_PER_POSITION);
-
+					// Push air back into sample port before moving to next solution
 					if(BUBBLES_IN_TUBE)
-						PumpVolume(FW, PumpVol_tube_bubble, Speed_Fast, 1);
-					PumpVolume(FW, PumpVol_Clean, Speed_Fast, 1);
-					userDelay(valve_delay, 1);
-					RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
-					PumpVolume(FW, PumpVol_air_bubble + PumpVol_tube_bubble, Speed_Fast, 1);
-					userDelay(valve_delay_after_air, 1);
-					if(ISEs.Config == PH_CL_CART)
-						RunValveToPossition_Bidirectional_AbortReady(V_RINSE, VALVE_STEPS_PER_POSITION);
-					else
-						RunValveToPossition_Bidirectional_AbortReady(V_CLEAN, VALVE_STEPS_PER_POSITION);
-					PumpVolume(BW, PumpVol_tube_bubble, Speed_Fast, 1);
-					userDelay(valve_delay, 1);
-					RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);		// Always start with air purge
-					PumpVolume(FW, PumpVol_Clean_center, Speed_Fast, 1);
+					{
+						RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
+						PumpVolume(BW, PumpVol_tube_bubble, Speed_Fast, 1);
+						userDelay(valve_delay, 1);
+					}
 
-					SleepValve();
+
+					//
+					// Clean amperometrics
+					//
+					if((gui32Error & 0) == 0)
+					{
+						// Pump in rinse over amperometrics for cleaning
+						RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);
+						FindPossitionZeroPump();
+						userDelay(valve_delay_after_air, 1);
+						UARTprintf("Pumping cleaning solution to clean amperometrics!\n");
+						if(ISEs.Config == PH_CL_CART)
+							RunValveToPossition_Bidirectional_AbortReady(V_RINSE, VALVE_STEPS_PER_POSITION);
+						else
+							RunValveToPossition_Bidirectional_AbortReady(V_CLEAN, VALVE_STEPS_PER_POSITION);
+
+						if(BUBBLES_IN_TUBE)
+							PumpVolume(FW, PumpVol_tube_bubble, Speed_Fast, 1);
+						PumpVolume(FW, PumpVol_Clean, Speed_Fast, 1);
+						userDelay(valve_delay, 1);
+						RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
+						PumpVolume(FW, PumpVol_air_bubble + PumpVol_tube_bubble, Speed_Fast, 1);
+						userDelay(valve_delay_after_air, 1);
+						if(ISEs.Config == PH_CL_CART)
+							RunValveToPossition_Bidirectional_AbortReady(V_RINSE, VALVE_STEPS_PER_POSITION);
+						else
+							RunValveToPossition_Bidirectional_AbortReady(V_CLEAN, VALVE_STEPS_PER_POSITION);
+						PumpVolume(BW, PumpVol_tube_bubble, Speed_Fast, 1);
+						userDelay(valve_delay, 1);
+						RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);		// Always start with air purge
+						PumpVolume(FW, PumpVol_Clean_center, Speed_Fast, 1);
+
+						SleepValve();
 
 #ifdef CC_CURRENT_LIMITED
 						CleanAmperometrics_CurrentLimited(0, 0, 0, OXIDE_REBUILD_TYPE);
 #else
 						CleanAmperometrics(0, 0, 0, OXIDE_REBUILD_TYPE);
 #endif
-				}
+					}
 
-				if((gui32Error & 0) == 0)
-					if(CONDITION_AMPS)
-					{
-						update_Status(STATUS_TEST, OPERATION_SAMPLE_B1);
-
-						uint8_t mixing_index = 0;
-						uint8_t in_range = 0;	// Set once pH mixing gets into correct range
-
-						while(in_range == 0 && mixing_index < MAX_TIMES_TO_MIX && (gui32Error & 0) == 0)
+					if((gui32Error & 0) == 0)
+						if(CONDITION_AMPS)
 						{
+							update_Status(STATUS_TEST, OPERATION_SAMPLE_B1);
+
+							uint8_t mixing_index = 0;
+							uint8_t in_range = 0;	// Set once pH mixing gets into correct range
+
 							if((gui32Error & 0) == 0)
 							{
 								// Prime a little B1 before test to clear out any contamination
@@ -15114,7 +15112,7 @@ int main(void) {
 							{
 								PumpVolume(FW, PumpVol_sample_rinse, Speed_Fast, 1);
 							}
-	//						FindPossitionZeroPump();
+							//						FindPossitionZeroPump();
 							userDelay(valve_delay, 1);
 
 							mixing_index++;
@@ -15148,11 +15146,11 @@ int main(void) {
 							userDelay(valve_delay, 1);
 							RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Move valve to air
 							PumpVolume(FW, PumpVol_air_bubble /*+ PumpVol_tube_bubble*/, Speed_Fast, 1);
-//							userDelay(valve_delay_after_air, 1);
+							//							userDelay(valve_delay_after_air, 1);
 
-//							RunValveToPossition_Bidirectional_AbortReady(V_B1, VALVE_STEPS_PER_POSITION);		// Move valve to buffer 1
-//							PumpVolume(BW, PumpVol_tube_bubble, Speed_Metering, 1);
-//							userDelay(valve_delay_metering, 1);
+							//							RunValveToPossition_Bidirectional_AbortReady(V_B1, VALVE_STEPS_PER_POSITION);		// Move valve to buffer 1
+							//							PumpVolume(BW, PumpVol_tube_bubble, Speed_Metering, 1);
+							//							userDelay(valve_delay_metering, 1);
 
 							//						RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);		// Move valve to air
 							//						PumpStepperRunStepSpeed_AbortReady(FW, Steps_follow_B1, Speed_placing);
@@ -15168,7 +15166,7 @@ int main(void) {
 
 							userDelay(diffusion_time, 1);
 
-//							RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);		// Move valve to air
+							//							RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);		// Move valve to air
 							PumpVolume(FW, PumpVol_center, Speed_Fast, 1);
 
 							SleepValve();
@@ -15183,19 +15181,19 @@ int main(void) {
 
 									T_Samp_B1 = MeasureTemperature(1);
 
-//									Cl_nA_FCl[k] /= 0.015 * T_Samp_B1 + 0.622;	// Normalize current to 25 C
+									//									Cl_nA_FCl[k] /= 0.015 * T_Samp_B1 + 0.622;	// Normalize current to 25 C
 									Cl_nA_FCl[k] /= 0.013 * T_Samp_B1 + 0.668;	// Normalize current to 25 C Updated 3/16/2020
 									UARTprintf("FCl raw normalized to 25C: %d nA * 1000\n", (int) (Cl_nA_FCl[k] * 1000));
 
-//									float Conductivity_B1 = MeasureConductivity(Cond_EEP_Rinse, Cond_EEP_Cal_2, 0);
+									//									float Conductivity_B1 = MeasureConductivity(Cond_EEP_Rinse, Cond_EEP_Cal_2, 0);
 									UARTprintf("Temperature of mix: %d C * 1000\n", (int) (T_Samp_B1 * 1000));
-//									UARTprintf("Conductivity of B1 mix: %d uS/cm * 1000\n", (int) (Conductivity_B1 * 1000));
+									//									UARTprintf("Conductivity of B1 mix: %d uS/cm * 1000\n", (int) (Conductivity_B1 * 1000));
 
-//									if(Conductivity_B1 < 4000)
-//									{
-//										gui32Error |= FCL_MIX_OUT_OF_RANGE;	// Update error
-//										update_Error();
-//									}
+									//									if(Conductivity_B1 < 4000)
+									//									{
+									//										gui32Error |= FCL_MIX_OUT_OF_RANGE;	// Update error
+									//										update_Error();
+									//									}
 								}
 							}
 
@@ -15206,45 +15204,43 @@ int main(void) {
 							RunValveToPossition_Bidirectional_AbortReady(V_B1, VALVE_STEPS_PER_POSITION);		// Move valve to buffer 1
 							PumpVolume(BW, PumpVol_tube_bubble, Speed_Metering, 1);
 							userDelay(valve_delay_metering, 1);
-						}
-					}
 
-
-				//
-				// TCL, B2
-				//
-				if((gui32Error & 0) == 0)
-					if(CONDITION_AMPS)
-					{
-						update_Status(STATUS_TEST, OPERATION_SAMPLE_B2);
-
-						uint8_t mixing_index = 0;
-						uint8_t in_range = 0;	// Set once pH mixing gets into correct range
-
-						// Prime B2 at beginning only once, don't push back until after done mixing
-						if((gui32Error & 0) == 0)
-						{
-							// Prime a little C2 before test to clear out any contamination
-							UARTprintf("Priming C2... \n");
-							RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);
-							PumpVolume(FW, PumpVol_air_bubble, Speed_Metering, 1);
-							userDelay(valve_delay_after_air, 1);
-							RunValveToPossition_Bidirectional_AbortReady(V_C2, VALVE_STEPS_PER_POSITION);
-							PumpVolume(FW, PumpVol_tube_prime_buffers, Speed_Metering, 1);
-							userDelay(valve_delay, 1);
-
-	//						// Prime a little B2 before test to clear out any contamination
-	//						UARTprintf("Priming B2... \n");
-	//						RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);
-	//						PumpVolume(FW, PumpVol_air_bubble, Speed_Metering, 1);
-	//						userDelay(valve_delay_after_air, 1);
-	//						RunValveToPossition_Bidirectional_AbortReady(V_B2, VALVE_STEPS_PER_POSITION);
-	//						PumpVolume(FW, PumpVol_tube_prime_buffers, Speed_Metering, 1);
-	//						userDelay(valve_delay, 1);
 						}
 
-						while(in_range == 0 && mixing_index < MAX_TIMES_TO_MIX && (gui32Error & 0) == 0)
+
+					//
+					// TCL, B2
+					//
+					if((gui32Error & 0) == 0)
+						if(CONDITION_AMPS)
 						{
+							update_Status(STATUS_TEST, OPERATION_SAMPLE_B2);
+
+							uint8_t mixing_index = 0;
+							uint8_t in_range = 0;	// Set once pH mixing gets into correct range
+
+							// Prime B2 at beginning only once, don't push back until after done mixing
+							if((gui32Error & 0) == 0)
+							{
+								// Prime a little C2 before test to clear out any contamination
+								UARTprintf("Priming C2... \n");
+								RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);
+								PumpVolume(FW, PumpVol_air_bubble, Speed_Metering, 1);
+								userDelay(valve_delay_after_air, 1);
+								RunValveToPossition_Bidirectional_AbortReady(V_C2, VALVE_STEPS_PER_POSITION);
+								PumpVolume(FW, PumpVol_tube_prime_buffers, Speed_Metering, 1);
+								userDelay(valve_delay, 1);
+
+								//						// Prime a little B2 before test to clear out any contamination
+								//						UARTprintf("Priming B2... \n");
+								//						RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);
+								//						PumpVolume(FW, PumpVol_air_bubble, Speed_Metering, 1);
+								//						userDelay(valve_delay_after_air, 1);
+								//						RunValveToPossition_Bidirectional_AbortReady(V_B2, VALVE_STEPS_PER_POSITION);
+								//						PumpVolume(FW, PumpVol_tube_prime_buffers, Speed_Metering, 1);
+								//						userDelay(valve_delay, 1);
+							}
+
 							RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
 							PumpVolume(FW, 33.6, Speed_Fast, 1);	// Pump a normal sized plug of sample so if B2 or C2 plugs get stuck this sample will catch them
 							userDelay(valve_delay, 1);
@@ -15253,7 +15249,7 @@ int main(void) {
 							userDelay(valve_delay_after_air, 1);
 							RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
 							PumpVolume(FW, PumpVol_sample_rinse, Speed_Fast, 1);
-	//						FindPossitionZeroPump();
+							//						FindPossitionZeroPump();
 							userDelay(valve_delay, 1);
 
 							mixing_index++;
@@ -15303,9 +15299,9 @@ int main(void) {
 
 							// Prime a little B2 before test to clear out any contamination
 							UARTprintf("Priming B2... \n");
-	//						RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);
-	//						PumpVolume(FW, PumpVol_air_bubble, Speed_Metering, 1);
-	//						userDelay(valve_delay_after_air, 1);
+							//						RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);
+							//						PumpVolume(FW, PumpVol_air_bubble, Speed_Metering, 1);
+							//						userDelay(valve_delay_after_air, 1);
 							RunValveToPossition_Bidirectional_AbortReady(V_B2, VALVE_STEPS_PER_POSITION);
 							PumpVolume(FW, PumpVol_tube_prime_buffers, Speed_Metering, 1);
 							userDelay(valve_delay, 1);
@@ -15347,81 +15343,80 @@ int main(void) {
 
 							if((gui32Error & 0) == 0)
 							{
-									Cl_nA_TCl[k] = ReadClnA(HIGH_RANGE, Amp_Voltage_Set, CL_TRACE_TIME);
+								Cl_nA_TCl[k] = ReadClnA(HIGH_RANGE, Amp_Voltage_Set, CL_TRACE_TIME);
 
-									UARTprintf("TCl raw: %d nA * 1000\n", (int) (Cl_nA_TCl[k] * 1000));
+								UARTprintf("TCl raw: %d nA * 1000\n", (int) (Cl_nA_TCl[k] * 1000));
 
-									T_Samp_B2 = MeasureTemperature(1);
-									Cl_nA_TCl[k] /= 0.014 * (T_Samp_B2) + 0.654;
-									UARTprintf("TCl raw normalized to 25C: %d nA * 1000\n", (int) (Cl_nA_TCl[k] * 1000));
-									//								UARTprintf("TCl raw normalized to 25C: %d nA * 1000", (int) ((Cl_nA_TCl / (0.025832 * T_Samp_B2 + 0.354211)) * 1000));
+								T_Samp_B2 = MeasureTemperature(1);
+								Cl_nA_TCl[k] /= 0.014 * (T_Samp_B2) + 0.654;
+								UARTprintf("TCl raw normalized to 25C: %d nA * 1000\n", (int) (Cl_nA_TCl[k] * 1000));
+								//								UARTprintf("TCl raw normalized to 25C: %d nA * 1000", (int) ((Cl_nA_TCl / (0.025832 * T_Samp_B2 + 0.354211)) * 1000));
 
-//									float Conductivity_B2 = MeasureConductivity(Cond_EEP_Rinse, Cond_EEP_Cal_2, 0);
-									UARTprintf("Temperature of mix: %d C * 1000\n", (int) (T_Samp_B2 * 1000));
-//									UARTprintf("Conductivity of B2 mix: %d uS/cm * 1000\n", (int) (Conductivity_B2 * 1000));
+								//									float Conductivity_B2 = MeasureConductivity(Cond_EEP_Rinse, Cond_EEP_Cal_2, 0);
+								UARTprintf("Temperature of mix: %d C * 1000\n", (int) (T_Samp_B2 * 1000));
+								//									UARTprintf("Conductivity of B2 mix: %d uS/cm * 1000\n", (int) (Conductivity_B2 * 1000));
 
-//									if(Conductivity_B2 < 9000)
-//									{
-//										gui32Error |= TCL_MIX_OUT_OF_RANGE;	// Update error
-//										update_Error();
-//									}
+								//									if(Conductivity_B2 < 9000)
+								//									{
+								//										gui32Error |= TCL_MIX_OUT_OF_RANGE;	// Update error
+								//										update_Error();
+								//									}
 
 							}
 
 							// RE and CE floating
 							IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWA, 1);		// Leave RE floating
 							IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWB, 0);		// Leave CE floating
+
+							// After running TCl push B2 buffer back slightly into pouch
+							RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Move valve to air
+							PumpVolume(FW, PumpVol_air_bubble + PumpVol_tube_bubble, Speed_Metering, 1);
+							userDelay(valve_delay_after_air, 1);
+							RunValveToPossition_Bidirectional_AbortReady(V_B2, VALVE_STEPS_PER_POSITION);		// Move valve to air
+							PumpVolume(BW, PumpVol_tube_bubble, Speed_Metering, 1);
+							userDelay(valve_delay, 1);
 						}
 
-						// After running TCl push B2 buffer back slightly into pouch
-						RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Move valve to air
-						PumpVolume(FW, PumpVol_air_bubble + PumpVol_tube_bubble, Speed_Metering, 1);
+
+					if((CONDITION_AMPS) && (gui32Error & 0) == 0)	// Rinse with sample if chlorine was ran, skip if running alkalinity as it will be done there
+					{
+						UARTprintf("Rinsing with sample!\n");
+						PrintTime();
+
+						UARTprintf("Rinsing with one long sample plug!\n");
+						RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
+						PumpVolume(FW, PumpVol_Sample_Prime, Speed_Fast, 1);
+					}
+
+					//				if((k == 2 || k == 5 || k == 8) && PURGE_SAMPLE)
+					if(PURGE_SAMPLE)
+					{
+						UARTprintf("Purging sample tube by pushing air backwards into it\n");
+						RunValveToPossition_Bidirectional(V_AIR, VALVE_STEPS_PER_POSITION);
+						PumpVolume(FW, PumpVol_sample_rinse + PumpVol_Sample_Prime + 33.6, Speed_Fast, 1);
 						userDelay(valve_delay_after_air, 1);
-						RunValveToPossition_Bidirectional_AbortReady(V_B2, VALVE_STEPS_PER_POSITION);		// Move valve to air
-						PumpVolume(BW, PumpVol_tube_bubble, Speed_Metering, 1);
+						RunValveToPossition_Bidirectional(V_SAMP, VALVE_STEPS_PER_POSITION);
+						PumpVolume(BW, PumpVol_Sample_Prime, Speed_Fast, 1);
 						userDelay(valve_delay, 1);
 					}
-
-
-				if((CONDITION_AMPS) && (gui32Error & 0) == 0)	// Rinse with sample if chlorine was ran, skip if running alkalinity as it will be done there
-				{
-					UARTprintf("Rinsing with sample!\n");
-					PrintTime();
-
-					UARTprintf("Rinsing with one long sample plug!\n");
-					RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
-					PumpVolume(FW, PumpVol_Sample_Prime, Speed_Fast, 1);
-				}
-
-//				if((k == 2 || k == 5 || k == 8) && PURGE_SAMPLE)
-				if(PURGE_SAMPLE)
-				{
-					UARTprintf("Purging sample tube by pushing air backwards into it\n");
-					RunValveToPossition_Bidirectional(V_AIR, VALVE_STEPS_PER_POSITION);
-					PumpVolume(FW, PumpVol_sample_rinse + PumpVol_Sample_Prime + 33.6, Speed_Fast, 1);
-					userDelay(valve_delay_after_air, 1);
-					RunValveToPossition_Bidirectional(V_SAMP, VALVE_STEPS_PER_POSITION);
-					PumpVolume(BW, PumpVol_Sample_Prime, Speed_Fast, 1);
-					userDelay(valve_delay, 1);
-				}
-				else
-				{
-					UARTprintf("Not purging sample tube\n");
-					RunValveToPossition_Bidirectional(V_AIR, VALVE_STEPS_PER_POSITION);
-					PumpVolume(FW, PumpVol_sample_rinse, Speed_Fast, 0);
-					userDelay(valve_delay_after_air, 0);
-					if(BUBBLES_IN_TUBE)
+					else
 					{
-						RunValveToPossition_Bidirectional(V_SAMP, VALVE_STEPS_PER_POSITION);
-						PumpVolume(BW, PumpVol_tube_bubble, Speed_Fast, 0);
-						userDelay(valve_delay, 0);
+						UARTprintf("Not purging sample tube\n");
+						RunValveToPossition_Bidirectional(V_AIR, VALVE_STEPS_PER_POSITION);
+						PumpVolume(FW, PumpVol_sample_rinse, Speed_Fast, 0);
+						userDelay(valve_delay_after_air, 0);
+						if(BUBBLES_IN_TUBE)
+						{
+							RunValveToPossition_Bidirectional(V_SAMP, VALVE_STEPS_PER_POSITION);
+							PumpVolume(BW, PumpVol_tube_bubble, Speed_Fast, 0);
+							userDelay(valve_delay, 0);
+						}
 					}
-				}
 
-				SleepValve();
+					SleepValve();
 
-				TestValveDrift();
-			}	// For all 9 samples
+					TestValveDrift();
+				}	// For all 9 samples
 
 
 			if((CONDITION_AMPS || CALIBRATE_CONDUCTIVITY) /*&& CALIBRATE_ISES*/ == 0)
