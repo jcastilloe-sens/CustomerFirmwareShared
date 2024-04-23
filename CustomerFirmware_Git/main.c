@@ -8618,6 +8618,24 @@ int main(void) {
 					else
 						IS = 0.00001 * Conductivity;
 
+#ifdef TESTING_MODE
+					if(g_QCSolution >= 1 && g_QCSolution <= 5)
+					{
+						if(g_QCSolution == 1)
+							IS = .0456;
+						else if(g_QCSolution == 2)
+							IS = .0437;
+						else if(g_QCSolution == 3)
+							IS = .00915;
+						else if(g_QCSolution == 4)
+							IS = .128;
+						else if(g_QCSolution == 5)
+							IS = .00615;
+
+						DEBUG_PRINT(UARTprintf("Setting IS to: %d/100000\n");)
+					}
+#endif
+
 					//				float Ca_Slope_SampT[2];//, Ca_E_Samp_TCor[2];//, Ca_Samp[2];
 					float pCa_Rinse;
 					// Check if values in the memory are p-values or concentrations
