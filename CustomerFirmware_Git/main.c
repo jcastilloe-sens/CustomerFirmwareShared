@@ -486,7 +486,7 @@ uint8_t PrimePouchTubes = 0;
 //#define STORE_IN_NITRIC		0		// 1 will pump in nitric acid instead of rinse at the end of the test
 #define STORE_HUMID			0		// 0 will flood with store at end, 1 will pump bubble over ISEs for storage
 #define STORE_FRIT_DRY		1
-#define STORE_AMPS_DRY		0		// 1 will store an air bubble over amps, but keep the ISEs and reference covered
+//#define STORE_AMPS_DRY		0		// 1 will store an air bubble over amps, but keep the ISEs and reference covered
 #define STORE_IN_CLEAN		0		// 1 will store in clean, 0 will store in rinse
 #define STORE_PH6_CLEAN		0		// This variable will only matter if STORE_IN_CLEAN is set, will have pH only cart to store in pH 6 clean
 
@@ -5611,66 +5611,66 @@ int main(void) {
 										PumpVolume(FW, 134.4, Speed_ISE, 0);
 										userDelay(valve_delay, 0);
 									}
-									else if(STORE_AMPS_DRY == 1)
-									{
-										//					DEBUG_PRINT(UARTprintf("Storing air bubble over amperometrics only!\n");)
-										//					RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
-										//					PumpStepperRunStepSpeed_AbortReady(FW, 2000, Speed_ISE);
-										//					userDelay(valve_delay, 1);
-										//					RunValveToPossition_Bidirectional_AbortReady(V_RINSE, VALVE_STEPS_PER_POSITION);
-										//					PumpStepperRunStepSpeed_AbortReady(FW, 11360, Speed_ISE);
-										//					userDelay(valve_delay, 1);
-
-										DEBUG_PRINT(UARTprintf("Storing air bubble over amperometrics only!\n");)
-											RunValveToPossition_Bidirectional(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
-										PumpVolume(FW, PumpVol_air_bubble, Speed_ISE, 0);
-										userDelay(valve_delay_after_air, 0);
-										RunValveToPossition_Bidirectional(Storage_Port, VALVE_STEPS_PER_POSITION);
-										PumpVolume(FW, 117.6, Speed_ISE, 0);
-										userDelay(valve_delay, 0);
-
-										// Set RE and CE floating and close RE/CE loop
-										IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWA, 1);
-										IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWB, 0);
-
-										// 10.7 uApp R = 309k + 499k = 808k
-										IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 0);
-										IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 0);
-
-										WaveGenSet(1);
-										userDelay(100, 0);
-										uint8_t signal_doubled = 0;
-										uint8_t checkstep = 0;
-
-										float CondReading = ConductivityMovingAvg(COND_FREQ);
-										float OldReading = CondReading;
-
-										DEBUG_PRINT(UARTprintf("Reading\t%d\n", (int) CondReading);)
-										while(signal_doubled == 0 && checkstep <= 60)
-										{
-											PumpVolume(FW, 2.75, Speed_ISE, 0);
-											checkstep++;
-
-											CondReading = ConductivityMovingAvg(COND_FREQ);
-											DEBUG_PRINT(UARTprintf("Reading\t%d\n", (int) CondReading);)
-
-											if(CondReading/OldReading > 2)
-											{
-												DEBUG_PRINT(UARTprintf("Conductivity signal doubled! Found storage location!\n");)
-													signal_doubled = 1;
-											}
-											OldReading = CondReading;
-
-
-										}
-										if(checkstep > 37)
-										{
-											DEBUG_PRINT(UARTprintf("Didn't find storage location!\n");)
-												PumpVolume(FW, 33.6, Speed_ISE, 0);
-										}
-
-										WaveGenSet(0);
-									}
+//									else if(STORE_AMPS_DRY == 1)
+//									{
+//										//					DEBUG_PRINT(UARTprintf("Storing air bubble over amperometrics only!\n");)
+//										//					RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
+//										//					PumpStepperRunStepSpeed_AbortReady(FW, 2000, Speed_ISE);
+//										//					userDelay(valve_delay, 1);
+//										//					RunValveToPossition_Bidirectional_AbortReady(V_RINSE, VALVE_STEPS_PER_POSITION);
+//										//					PumpStepperRunStepSpeed_AbortReady(FW, 11360, Speed_ISE);
+//										//					userDelay(valve_delay, 1);
+//
+//										DEBUG_PRINT(UARTprintf("Storing air bubble over amperometrics only!\n");)
+//											RunValveToPossition_Bidirectional(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
+//										PumpVolume(FW, PumpVol_air_bubble, Speed_ISE, 0);
+//										userDelay(valve_delay_after_air, 0);
+//										RunValveToPossition_Bidirectional(Storage_Port, VALVE_STEPS_PER_POSITION);
+//										PumpVolume(FW, 117.6, Speed_ISE, 0);
+//										userDelay(valve_delay, 0);
+//
+//										// Set RE and CE floating and close RE/CE loop
+//										IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWA, 1);
+//										IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWB, 0);
+//
+//										// 10.7 uApp R = 309k + 499k = 808k
+//										IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 0);
+//										IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 0);
+//
+//										WaveGenSet(1);
+//										userDelay(100, 0);
+//										uint8_t signal_doubled = 0;
+//										uint8_t checkstep = 0;
+//
+//										float CondReading = ConductivityMovingAvg(COND_FREQ);
+//										float OldReading = CondReading;
+//
+//										DEBUG_PRINT(UARTprintf("Reading\t%d\n", (int) CondReading);)
+//										while(signal_doubled == 0 && checkstep <= 60)
+//										{
+//											PumpVolume(FW, 2.75, Speed_ISE, 0);
+//											checkstep++;
+//
+//											CondReading = ConductivityMovingAvg(COND_FREQ);
+//											DEBUG_PRINT(UARTprintf("Reading\t%d\n", (int) CondReading);)
+//
+//											if(CondReading/OldReading > 2)
+//											{
+//												DEBUG_PRINT(UARTprintf("Conductivity signal doubled! Found storage location!\n");)
+//													signal_doubled = 1;
+//											}
+//											OldReading = CondReading;
+//
+//
+//										}
+//										if(checkstep > 37)
+//										{
+//											DEBUG_PRINT(UARTprintf("Didn't find storage location!\n");)
+//												PumpVolume(FW, 33.6, Speed_ISE, 0);
+//										}
+//
+//										WaveGenSet(0);
+//									}
 									else if(MEASURE_POSTRINSE_CAL == 0)
 									{
 										DEBUG_PRINT(UARTprintf("Storing covering everyting!\n");)
@@ -6094,7 +6094,7 @@ int main(void) {
 				if(MEASURE_POSTRINSE_CAL)
 				{
 					PumpVolume(FW, PumpVol_Solution_plug, Speed_ISE, 0);
-					if(STORE_HUMID || STORE_FRIT_DRY || STORE_AMPS_DRY)
+					if(STORE_HUMID || STORE_FRIT_DRY /*|| STORE_AMPS_DRY*/)
 					{
 						userDelay(valve_delay, 0);
 						RunValveToPossition_Bidirectional(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
@@ -6117,7 +6117,7 @@ int main(void) {
 					MemoryWrite(Cal_page, OFFSET_CR_ISE_1_POST, 40, (uint8_t *) ISE_mV_PostRinse);
 					MemoryWrite(Cal_page, OFFSET_CR_T_POSTRINSE, 4, (uint8_t *) &T_PostRinse);
 
-					if(STORE_HUMID || STORE_FRIT_DRY || STORE_AMPS_DRY)
+					if(STORE_HUMID || STORE_FRIT_DRY /*|| STORE_AMPS_DRY*/)
 					{
 						RunValveToPossition_Bidirectional(Storage_Port, VALVE_STEPS_PER_POSITION);
 						PumpVolume(FW, PumpVol_Solution, Speed_ISE, 0);
@@ -6145,66 +6145,66 @@ int main(void) {
 					PumpVolume(FW, 134.4, Speed_ISE, 0);
 					userDelay(valve_delay, 0);
 				}
-				else if(STORE_AMPS_DRY == 1)
-				{
+//				else if(STORE_AMPS_DRY == 1)
+//				{
+////					DEBUG_PRINT(UARTprintf("Storing air bubble over amperometrics only!\n");)
+////					RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
+////					PumpStepperRunStepSpeed_AbortReady(FW, 2000, Speed_ISE);
+////					userDelay(valve_delay, 1);
+////					RunValveToPossition_Bidirectional_AbortReady(V_RINSE, VALVE_STEPS_PER_POSITION);
+////					PumpStepperRunStepSpeed_AbortReady(FW, 11360, Speed_ISE);
+////					userDelay(valve_delay, 1);
+//
 //					DEBUG_PRINT(UARTprintf("Storing air bubble over amperometrics only!\n");)
-//					RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
-//					PumpStepperRunStepSpeed_AbortReady(FW, 2000, Speed_ISE);
-//					userDelay(valve_delay, 1);
-//					RunValveToPossition_Bidirectional_AbortReady(V_RINSE, VALVE_STEPS_PER_POSITION);
-//					PumpStepperRunStepSpeed_AbortReady(FW, 11360, Speed_ISE);
-//					userDelay(valve_delay, 1);
-
-					DEBUG_PRINT(UARTprintf("Storing air bubble over amperometrics only!\n");)
-					RunValveToPossition_Bidirectional(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
-					PumpVolume(FW, PumpVol_air_bubble, Speed_ISE, 0);
-					userDelay(valve_delay_after_air, 0);
-					RunValveToPossition_Bidirectional(Storage_Port, VALVE_STEPS_PER_POSITION);
-					PumpVolume(FW, 117.6, Speed_ISE, 0);
-					userDelay(valve_delay, 0);
-
-					// Set RE and CE floating and close RE/CE loop
-					IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWA, 1);
-					IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWB, 0);
-
-					// 10.7 uApp R = 309k + 499k = 808k
-					IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 0);
-					IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 0);
-
-					WaveGenSet(1);
-					userDelay(100, 0);
-					uint8_t signal_doubled = 0;
-					uint8_t checkstep = 0;
-
-					float CondReading = ConductivityMovingAvg(COND_FREQ);
-					float OldReading = CondReading;
-
-					DEBUG_PRINT(UARTprintf("Reading\t%d\n", (int) CondReading);)
-					while(signal_doubled == 0 && checkstep <= 60)
-					{
-						PumpVolume(FW, 2.75, Speed_ISE, 0);
-						checkstep++;
-
-						CondReading = ConductivityMovingAvg(COND_FREQ);
-						DEBUG_PRINT(UARTprintf("Reading\t%d\n", (int) CondReading);)
-
-						if(CondReading/OldReading > 2)
-						{
-							DEBUG_PRINT(UARTprintf("Conductivity signal doubled! Found storage location!\n");)
-							signal_doubled = 1;
-						}
-						OldReading = CondReading;
-
-
-					}
-					if(checkstep > 37)
-					{
-						DEBUG_PRINT(UARTprintf("Didn't find storage location!\n");)
-						PumpVolume(FW, 33.6, Speed_ISE, 0);
-					}
-
-					WaveGenSet(0);
-				}
+//					RunValveToPossition_Bidirectional(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
+//					PumpVolume(FW, PumpVol_air_bubble, Speed_ISE, 0);
+//					userDelay(valve_delay_after_air, 0);
+//					RunValveToPossition_Bidirectional(Storage_Port, VALVE_STEPS_PER_POSITION);
+//					PumpVolume(FW, 117.6, Speed_ISE, 0);
+//					userDelay(valve_delay, 0);
+//
+//					// Set RE and CE floating and close RE/CE loop
+//					IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWA, 1);
+//					IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWB, 0);
+//
+//					// 10.7 uApp R = 309k + 499k = 808k
+//					IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 0);
+//					IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 0);
+//
+//					WaveGenSet(1);
+//					userDelay(100, 0);
+//					uint8_t signal_doubled = 0;
+//					uint8_t checkstep = 0;
+//
+//					float CondReading = ConductivityMovingAvg(COND_FREQ);
+//					float OldReading = CondReading;
+//
+//					DEBUG_PRINT(UARTprintf("Reading\t%d\n", (int) CondReading);)
+//					while(signal_doubled == 0 && checkstep <= 60)
+//					{
+//						PumpVolume(FW, 2.75, Speed_ISE, 0);
+//						checkstep++;
+//
+//						CondReading = ConductivityMovingAvg(COND_FREQ);
+//						DEBUG_PRINT(UARTprintf("Reading\t%d\n", (int) CondReading);)
+//
+//						if(CondReading/OldReading > 2)
+//						{
+//							DEBUG_PRINT(UARTprintf("Conductivity signal doubled! Found storage location!\n");)
+//							signal_doubled = 1;
+//						}
+//						OldReading = CondReading;
+//
+//
+//					}
+//					if(checkstep > 37)
+//					{
+//						DEBUG_PRINT(UARTprintf("Didn't find storage location!\n");)
+//						PumpVolume(FW, 33.6, Speed_ISE, 0);
+//					}
+//
+//					WaveGenSet(0);
+//				}
 				else if(MEASURE_POSTRINSE_CAL == 0)
 				{
 					DEBUG_PRINT(UARTprintf("Storing covering everyting!\n");)
@@ -13252,81 +13252,81 @@ int main(void) {
 					PumpVolume(FW, 134.4, Speed_Fast, 0);
 					userDelay(valve_delay, 0);
 				}
-				else if(STORE_AMPS_DRY == 1)
-				{
+//				else if(STORE_AMPS_DRY == 1)
+//				{
+////					DEBUG_PRINT(UARTprintf("Storing air bubble over amperometrics only!\n");)
+////					RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
+////					PumpStepperRunStepSpeed_AbortReady(FW, 2000, Speed_ISE);
+////					userDelay(valve_delay, 1);
+////					RunValveToPossition_Bidirectional_AbortReady(V_RINSE, VALVE_STEPS_PER_POSITION);
+////					PumpStepperRunStepSpeed_AbortReady(FW, 11360, Speed_ISE);
+////					userDelay(valve_delay, 1);
+//
 //					DEBUG_PRINT(UARTprintf("Storing air bubble over amperometrics only!\n");)
-//					RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
-//					PumpStepperRunStepSpeed_AbortReady(FW, 2000, Speed_ISE);
+//					RunValveToPossition_Bidirectional(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
+//					PumpVolume(FW, PumpVol_air_bubble, Speed_Fast, 0);
 //					userDelay(valve_delay, 1);
-//					RunValveToPossition_Bidirectional_AbortReady(V_RINSE, VALVE_STEPS_PER_POSITION);
-//					PumpStepperRunStepSpeed_AbortReady(FW, 11360, Speed_ISE);
-//					userDelay(valve_delay, 1);
-
-					DEBUG_PRINT(UARTprintf("Storing air bubble over amperometrics only!\n");)
-					RunValveToPossition_Bidirectional(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
-					PumpVolume(FW, PumpVol_air_bubble, Speed_Fast, 0);
-					userDelay(valve_delay, 1);
-#ifdef CAL_2_RINSE
-					RunValveToPossition_Bidirectional(V_CAL_2, VALVE_STEPS_PER_POSITION);
-#else
-					RunValveToPossition_Bidirectional(Storage_Port, VALVE_STEPS_PER_POSITION);
-#endif
-					PumpVolume(FW, 117.6, Speed_Fast, 0);
-					userDelay(valve_delay, 0);
-
-					// Set RE and CE floating and close RE/CE loop
-					IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWA, 1);
-					IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWB, 0);
-
-					// 10.7 uApp R = 309k + 499k = 808k
-					IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 0);
-					IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 0);
-
-					WaveGenSet(1);
-					userDelay(100, 1);
-					uint8_t signal_doubled = 0;
-					uint8_t checkstep = 0;
-
-					float CondReading = ConductivityMovingAvg(COND_FREQ);
-					float OldReading = CondReading;
-
-					DEBUG_PRINT(UARTprintf("Reading\t%d\n", (int) CondReading);)
-					while(signal_doubled == 0 && checkstep <= 60)
-					{
-//						if((checkstep + 5) % 10 == 0)
+//#ifdef CAL_2_RINSE
+//					RunValveToPossition_Bidirectional(V_CAL_2, VALVE_STEPS_PER_POSITION);
+//#else
+//					RunValveToPossition_Bidirectional(Storage_Port, VALVE_STEPS_PER_POSITION);
+//#endif
+//					PumpVolume(FW, 117.6, Speed_Fast, 0);
+//					userDelay(valve_delay, 0);
+//
+//					// Set RE and CE floating and close RE/CE loop
+//					IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWA, 1);
+//					IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWB, 0);
+//
+//					// 10.7 uApp R = 309k + 499k = 808k
+//					IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 0);
+//					IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 0);
+//
+//					WaveGenSet(1);
+//					userDelay(100, 1);
+//					uint8_t signal_doubled = 0;
+//					uint8_t checkstep = 0;
+//
+//					float CondReading = ConductivityMovingAvg(COND_FREQ);
+//					float OldReading = CondReading;
+//
+//					DEBUG_PRINT(UARTprintf("Reading\t%d\n", (int) CondReading);)
+//					while(signal_doubled == 0 && checkstep <= 60)
+//					{
+////						if((checkstep + 5) % 10 == 0)
+////						{
+////							PumpStepperRunStepSpeed(FW, 500, Speed_ISE);
+////							checkstep += 5;
+////						}
+////						else
+////						{
+////							PumpStepperRunStepSpeed(FW, 100, Speed_ISE);
+////							checkstep++;
+////						}
+//
+//						PumpVolume(FW, 2.75, Speed_Fast, 0);
+//						checkstep++;
+//
+//						CondReading = ConductivityMovingAvg(COND_FREQ);
+//						DEBUG_PRINT(UARTprintf("Reading\t%d\n", (int) CondReading);)
+//
+//						if(CondReading/OldReading > 2)
 //						{
-//							PumpStepperRunStepSpeed(FW, 500, Speed_ISE);
-//							checkstep += 5;
+//							DEBUG_PRINT(UARTprintf("Conductivity signal doubled! Found storage location!\n");)
+//							signal_doubled = 1;
 //						}
-//						else
-//						{
-//							PumpStepperRunStepSpeed(FW, 100, Speed_ISE);
-//							checkstep++;
-//						}
-
-						PumpVolume(FW, 2.75, Speed_Fast, 0);
-						checkstep++;
-
-						CondReading = ConductivityMovingAvg(COND_FREQ);
-						DEBUG_PRINT(UARTprintf("Reading\t%d\n", (int) CondReading);)
-
-						if(CondReading/OldReading > 2)
-						{
-							DEBUG_PRINT(UARTprintf("Conductivity signal doubled! Found storage location!\n");)
-							signal_doubled = 1;
-						}
-						OldReading = CondReading;
-
-
-					}
-					if(checkstep > 37)
-					{
-						DEBUG_PRINT(UARTprintf("Didn't find storage location!\n");)
-						PumpVolume(FW, 33.6, Speed_Fast, 0);
-					}
-
-					WaveGenSet(0);
-				}
+//						OldReading = CondReading;
+//
+//
+//					}
+//					if(checkstep > 37)
+//					{
+//						DEBUG_PRINT(UARTprintf("Didn't find storage location!\n");)
+//						PumpVolume(FW, 33.6, Speed_Fast, 0);
+//					}
+//
+//					WaveGenSet(0);
+//				}
 				else
 				{
 					DEBUG_PRINT(UARTprintf("Storing covering everyting!\n");)
@@ -13522,73 +13522,73 @@ int main(void) {
 	#endif
 						PumpVolume(FW, 134.4, Speed_Fast, 0);
 					}
-					else if(STORE_AMPS_DRY == 1)
-					{
-						DEBUG_PRINT(UARTprintf("Storing air bubble over amperometrics only!\n");)
-						RunValveToPossition_Bidirectional(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
-						PumpVolume(FW, 33.6, Speed_Fast, 0);
-						userDelay(valve_delay, 0);
-	#ifdef CAL_2_RINSE
-						RunValveToPossition_Bidirectional(V_CAL_2, VALVE_STEPS_PER_POSITION);
-	#else
-						RunValveToPossition_Bidirectional(Storage_Port, VALVE_STEPS_PER_POSITION);
-	#endif
-						PumpVolume(FW, 117.6, Speed_Fast, 0);
-						userDelay(valve_delay, 0);
-
-						// Set RE and CE floating and close RE/CE loop
-						IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWA, 1);
-						IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWB, 0);
-
-						// 10.7 uApp R = 309k + 499k = 808k
-						IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 0);
-						IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 0);
-
-						WaveGenSet(1);
-						userDelay(100, 0);
-						uint8_t signal_doubled = 0;
-						uint8_t checkstep = 0;
-
-						float CondReading = ConductivityMovingAvg(COND_FREQ);
-						float OldReading = CondReading;
-
-						DEBUG_PRINT(UARTprintf("Reading\t%d\n", (int) CondReading);)
-						while(signal_doubled == 0 && checkstep <= 60)
-						{
-//							if((checkstep + 5) % 10 == 0)
+//					else if(STORE_AMPS_DRY == 1)
+//					{
+//						DEBUG_PRINT(UARTprintf("Storing air bubble over amperometrics only!\n");)
+//						RunValveToPossition_Bidirectional(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
+//						PumpVolume(FW, 33.6, Speed_Fast, 0);
+//						userDelay(valve_delay, 0);
+//	#ifdef CAL_2_RINSE
+//						RunValveToPossition_Bidirectional(V_CAL_2, VALVE_STEPS_PER_POSITION);
+//	#else
+//						RunValveToPossition_Bidirectional(Storage_Port, VALVE_STEPS_PER_POSITION);
+//	#endif
+//						PumpVolume(FW, 117.6, Speed_Fast, 0);
+//						userDelay(valve_delay, 0);
+//
+//						// Set RE and CE floating and close RE/CE loop
+//						IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWA, 1);
+//						IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWB, 0);
+//
+//						// 10.7 uApp R = 309k + 499k = 808k
+//						IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 0);
+//						IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 0);
+//
+//						WaveGenSet(1);
+//						userDelay(100, 0);
+//						uint8_t signal_doubled = 0;
+//						uint8_t checkstep = 0;
+//
+//						float CondReading = ConductivityMovingAvg(COND_FREQ);
+//						float OldReading = CondReading;
+//
+//						DEBUG_PRINT(UARTprintf("Reading\t%d\n", (int) CondReading);)
+//						while(signal_doubled == 0 && checkstep <= 60)
+//						{
+////							if((checkstep + 5) % 10 == 0)
+////							{
+////								PumpStepperRunStepSpeed(FW, 500, Speed_ISE);
+////								checkstep += 5;
+////							}
+////							else
+////							{
+////								PumpStepperRunStepSpeed(FW, 100, Speed_ISE);
+////								checkstep++;
+////							}
+//
+//							PumpVolume(FW, 2.75, Speed_Fast, 0);
+//							checkstep++;
+//
+//							CondReading = ConductivityMovingAvg(COND_FREQ);
+//							DEBUG_PRINT(UARTprintf("Reading\t%d\n", (int) CondReading);)
+//
+//							if(CondReading/OldReading > 2)
 //							{
-//								PumpStepperRunStepSpeed(FW, 500, Speed_ISE);
-//								checkstep += 5;
+//								DEBUG_PRINT(UARTprintf("Conductivity signal doubled! Found storage location!\n");)
+//								signal_doubled = 1;
 //							}
-//							else
-//							{
-//								PumpStepperRunStepSpeed(FW, 100, Speed_ISE);
-//								checkstep++;
-//							}
-
-							PumpVolume(FW, 2.75, Speed_Fast, 0);
-							checkstep++;
-
-							CondReading = ConductivityMovingAvg(COND_FREQ);
-							DEBUG_PRINT(UARTprintf("Reading\t%d\n", (int) CondReading);)
-
-							if(CondReading/OldReading > 2)
-							{
-								DEBUG_PRINT(UARTprintf("Conductivity signal doubled! Found storage location!\n");)
-								signal_doubled = 1;
-							}
-							OldReading = CondReading;
-
-
-						}
-						if(checkstep > 37)
-						{
-							DEBUG_PRINT(UARTprintf("Didn't find storage location!\n");)
-							PumpVolume(FW, 33.6, Speed_Fast, 0);
-						}
-
-						WaveGenSet(0);
-					}
+//							OldReading = CondReading;
+//
+//
+//						}
+//						if(checkstep > 37)
+//						{
+//							DEBUG_PRINT(UARTprintf("Didn't find storage location!\n");)
+//							PumpVolume(FW, 33.6, Speed_Fast, 0);
+//						}
+//
+//						WaveGenSet(0);
+//					}
 					else
 					{
 						DEBUG_PRINT(UARTprintf("Storing covering everything!\n");)
@@ -15489,58 +15489,58 @@ int main(void) {
 						RunValveToPossition_Bidirectional(Storage_Port, VALVE_STEPS_PER_POSITION);
 						PumpVolume(FW, 134.4, Speed_Fast, 0);
 					}
-					else if(STORE_AMPS_DRY == 1)
-					{
-						UARTprintf("Storing air bubble over amperometrics only!\n");
-						RunValveToPossition_Bidirectional(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
-						PumpVolume(FW, PumpVol_air_bubble, Speed_Fast, 0);
-						userDelay(valve_delay, 1);
-						RunValveToPossition_Bidirectional(Storage_Port, VALVE_STEPS_PER_POSITION);
-						PumpVolume(FW, 117.6, Speed_Fast, 0);
-						userDelay(valve_delay, 0);
-
-						// Set RE and CE floating and close RE/CE loop
-						IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWA, 1);
-						IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWB, 0);
-
-						// 10.7 uApp R = 309k + 499k = 808k
-						IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 0);
-						IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 0);
-
-						WaveGenSet(1);
-						userDelay(100, 1);
-						uint8_t signal_doubled = 0;
-						uint8_t checkstep = 0;
-
-						float CondReading = ConductivityMovingAvg(COND_FREQ);
-						float OldReading = CondReading;
-
-						UARTprintf("Reading\t%d\n", (int) CondReading);
-						while(signal_doubled == 0 && checkstep <= 60)
-						{
-							PumpVolume(FW, 2.75, Speed_Fast, 0);
-							checkstep++;
-
-							CondReading = ConductivityMovingAvg(COND_FREQ);
-							UARTprintf("Reading\t%d\n", (int) CondReading);
-
-							if(CondReading/OldReading > 2)
-							{
-								UARTprintf("Conductivity signal doubled! Found storage location!\n");
-								signal_doubled = 1;
-							}
-							OldReading = CondReading;
-
-
-						}
-						if(checkstep > 37)
-						{
-							UARTprintf("Didn't find storage location!\n");
-							PumpVolume(FW, 33.6, Speed_Fast, 0);
-						}
-
-						WaveGenSet(0);
-					}
+//					else if(STORE_AMPS_DRY == 1)
+//					{
+//						UARTprintf("Storing air bubble over amperometrics only!\n");
+//						RunValveToPossition_Bidirectional(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
+//						PumpVolume(FW, PumpVol_air_bubble, Speed_Fast, 0);
+//						userDelay(valve_delay, 1);
+//						RunValveToPossition_Bidirectional(Storage_Port, VALVE_STEPS_PER_POSITION);
+//						PumpVolume(FW, 117.6, Speed_Fast, 0);
+//						userDelay(valve_delay, 0);
+//
+//						// Set RE and CE floating and close RE/CE loop
+//						IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWA, 1);
+//						IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWB, 0);
+//
+//						// 10.7 uApp R = 309k + 499k = 808k
+//						IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 0);
+//						IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 0);
+//
+//						WaveGenSet(1);
+//						userDelay(100, 1);
+//						uint8_t signal_doubled = 0;
+//						uint8_t checkstep = 0;
+//
+//						float CondReading = ConductivityMovingAvg(COND_FREQ);
+//						float OldReading = CondReading;
+//
+//						UARTprintf("Reading\t%d\n", (int) CondReading);
+//						while(signal_doubled == 0 && checkstep <= 60)
+//						{
+//							PumpVolume(FW, 2.75, Speed_Fast, 0);
+//							checkstep++;
+//
+//							CondReading = ConductivityMovingAvg(COND_FREQ);
+//							UARTprintf("Reading\t%d\n", (int) CondReading);
+//
+//							if(CondReading/OldReading > 2)
+//							{
+//								UARTprintf("Conductivity signal doubled! Found storage location!\n");
+//								signal_doubled = 1;
+//							}
+//							OldReading = CondReading;
+//
+//
+//						}
+//						if(checkstep > 37)
+//						{
+//							UARTprintf("Didn't find storage location!\n");
+//							PumpVolume(FW, 33.6, Speed_Fast, 0);
+//						}
+//
+//						WaveGenSet(0);
+//					}
 					else
 					{
 						UARTprintf("Storing covering everyting!\n");
