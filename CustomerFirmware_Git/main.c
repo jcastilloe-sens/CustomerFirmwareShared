@@ -8626,9 +8626,9 @@ int main(void) {
 						else if(g_QCSolution == 2)
 							IS = .0437;
 						else if(g_QCSolution == 3)
-							IS = .00915;
+							IS = .0107;
 						else if(g_QCSolution == 4)
-							IS = .128;
+							IS = .00757;
 						else if(g_QCSolution == 5)
 							IS = .00615;
 
