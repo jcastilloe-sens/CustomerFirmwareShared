@@ -563,8 +563,11 @@ extern uint8_t gui8IO_Ext2_Reg3;
 #define OFFSET_MG_1_PH_SLOPE	(182 + 256)
 #define OFFSET_MG_2_MV_CAL_1	(186 + 256)
 #define OFFSET_MG_2_PH_SLOPE	(186 + 256)
-#define OFFSET_CA_1_MV_CAL_2	(190 + 256)
-#define OFFSET_CA_2_MV_CAL_2	(194 + 256)
+//#define OFFSET_CA_1_MV_CAL_2	(190 + 256)
+//#define OFFSET_CA_2_MV_CAL_2	(194 + 256)
+#define OFFSET_H2_1_MV_CAL6_B2	(190 + 256)
+#define OFFSET_H2_2_MV_CAL6_B2	(194 + 256)
+
 
 #define OFFSET_TH_1_LOG_K		(80 + 256)
 #define OFFSET_TH_2_LOG_K		(84 + 256)
@@ -730,6 +733,9 @@ extern uint8_t gui8IO_Ext2_Reg3;
 #define OFFSET_B1_THERM_TEMP	(208 + 256)
 #define OFFSET_B2_THERM_TEMP	(212 + 256)
 #define OFFSET_B2_PRIME_COND	(216 + 256)
+#define OFFSET_NH4_T1_MIX_PH	(220 + 256)
+#define OFFSET_NH4_T1_MIX_VOL	(224 + 256)
+#define OFFSET_NH4_T1_MIX_COND	(228 + 256)
 
 #endif
 

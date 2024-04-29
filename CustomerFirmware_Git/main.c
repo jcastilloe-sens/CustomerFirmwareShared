@@ -344,6 +344,15 @@
 //		V01.03.21:	2/19/2024: Added predefine for calibrating H2 in Cal 6 + B2 mix
 //			2/21/2024: Use different conductivity factory cal slopes if running a 1 kHz board or 5 kHz board
 //					Added support for different disinfection configurations
+//		V01.03.22: 2/28/2024: Adding ability to specify QC points to run from UART that will red light/green light them automatically
+//			3/3/2024: Adjusting H2 readings in alk mix based on the Cr reading, only if H2 reading is higher pH than Cr, as the likely cause is due to single point offset issues
+//		V01.03.23: 3/11/2024: Alk when adding acid because first mix is close to endpoint calculate volume to shift pH 0.3, if first mix is in bounds but second isn't calculate to get second mix in bounds rather than just give up
+//		V01.03.24: 3/12/2024: Save and print NH4 T1 mix conductivity
+//		V01.03.25: 3/13/2024: H2 pH readings in alk mix correct based on Cal 6 - Rinse mV from daily cal. Added timing report
+//		V01.03.26:	3/18/2024: Changed NH4 T1 mix to go if pH > 8, guess if no alkalinity is based on Ca hardness as a proxy for alkalinity, for disinfection cartridge pump 7.5 uL
+//		V01.03.27: 3/20/2024: Add sample flushing step after disinfection cartridge HEPES mix
+//		V01.03.28: 3/26/2024: Going back to adjusting H2 readings based on Cr sensor, adding in Cal 6+B2 H2 calibration and saving mV to memory
+//		V01.03.29: 3/27/2024: Switching to storing on sample, changed NH4 T1 mix to match alkalinity mix
 //*****************************************************************************
 #include <stdio.h>
 #include <stdint.h>
@@ -414,6 +423,7 @@
 
 #ifdef TESTING_MODE
 uint8_t g_RerunCal = 1;
+uint8_t g_QCSolution = 0;
 #define RERUN_CALIBRATION	1 & g_RerunCal	// 1 will rerun a calibration if it fails or repump a solution if only 1 solution had a problem, 0 will just run the calibration without rerunning anything
 #define PRIME_POUCH_TUBES	1	// 1 will purge pouch tubes on the first calibration, I am going to allow UART control to do it to later calibrations as well, 0 will not
 uint8_t PrimePouchTubes = 0;
@@ -746,18 +756,18 @@ int main(void) {
 
 	if(1)
 	{
-#ifdef VALVE_STRUCT
-		DEBUG_PRINT(UARTprintf("Air: %d\n", V_AIR);)
-		DEBUG_PRINT(UARTprintf("Samp: %d\n", V_SAMP);)
-		DEBUG_PRINT(UARTprintf("B1: %d\n", V_B1);)
-		DEBUG_PRINT(UARTprintf("B2: %d\n", V_B2);)
-		DEBUG_PRINT(UARTprintf("C2: %d\n", V_C2);)
-		DEBUG_PRINT(UARTprintf("Clean: %d\n", V_CLEAN);)
-		DEBUG_PRINT(UARTprintf("Cal 5: %d\n", V_CAL_2);)
-		DEBUG_PRINT(UARTprintf("Cal 6: %d\n", V_CAL_1);)
-		DEBUG_PRINT(UARTprintf("T1: %d\n", V_T1);)
-		DEBUG_PRINT(UARTprintf("Rinse: %d\n", V_RINSE);)
-#endif
+//#ifdef VALVE_STRUCT
+//		DEBUG_PRINT(UARTprintf("Air: %d\n", V_AIR);)
+//		DEBUG_PRINT(UARTprintf("Samp: %d\n", V_SAMP);)
+//		DEBUG_PRINT(UARTprintf("B1: %d\n", V_B1);)
+//		DEBUG_PRINT(UARTprintf("B2: %d\n", V_B2);)
+//		DEBUG_PRINT(UARTprintf("C2: %d\n", V_C2);)
+//		DEBUG_PRINT(UARTprintf("Clean: %d\n", V_CLEAN);)
+//		DEBUG_PRINT(UARTprintf("Cal 5: %d\n", V_CAL_2);)
+//		DEBUG_PRINT(UARTprintf("Cal 6: %d\n", V_CAL_1);)
+//		DEBUG_PRINT(UARTprintf("T1: %d\n", V_T1);)
+//		DEBUG_PRINT(UARTprintf("Rinse: %d\n", V_RINSE);)
+//#endif
 		uint32_t AC;
 		EEPROMRead(&AC, OFFSET_AUTO_CAL, 4);
 		DEBUG_PRINT(UARTprintf("Auto Cal: %d, %d:%d\n", AC & 1, AC >> 8 & 0xFF, AC >> 16 & 0xFF);)
@@ -882,6 +892,10 @@ int main(void) {
 			}
 
 			SetLED(RED_BUTTON | GREEN_BUTTON | BLUE_BUTTON | RED_BUTTON_V | GREEN_BUTTON_V | BLUE_BUTTON_V, 0);
+
+#ifdef TESTING_MODE
+			g_QCSolution = 0;	// Reset this to 0 when entering idle in case it
+#endif
 
 			update_Status(STATUS_IDLE, OPERATION_IDLE);
 			while(GPIOPinRead(IO_BUTTON_BASE, IO_BUTTON_PIN) == 0);	// Wait for BT to release button right after setting status
@@ -1042,7 +1056,7 @@ int main(void) {
 //			DEBUG_PRINT(UARTprintf("To turn on/off FCl, TCl, or Alk type F, T, or A\n");)
 
 			DEBUG_PRINT(UARTprintf("UART Commands:\nA: Alkalinity\nF: Free Chlorine\nT: Total Chlorine\nP: Pump sample vial\nC: Auto Calibration\nR: Rerun Cal\nB: Prime bubbles out of pouch tubes\n");)
-			DEBUG_PRINT(UARTprintf("V: Turn and store valve\nM: Write to memory\n");)
+			DEBUG_PRINT(UARTprintf("V: Turn and store valve\nM: Write to memory\nQ: Run QC sample\n");)
 			DEBUG_PRINT(UARTprintf("1: Run Factory Cal\n");)
 #endif
 
@@ -1129,12 +1143,25 @@ int main(void) {
 						}
 					}
 
-					if(Command == 'F')
+					// Simple On/Off commands
+					if(Command == 'F' || Command == 'T' || Command == 'A' || Command == 'R' || Command == 'B' || Command == 'Q')
 					{
 						uint8_t check = 1;
 						DEBUG_PRINT(UARTprintf("\n");)
 
-						DEBUG_PRINT(UARTprintf("Type 1 to turn on FCl, type 0 to turn off FCl\n");)
+
+						if(Command == 'F')
+						{DEBUG_PRINT(UARTprintf("Type 1 to turn on FCl, type 0 to turn off FCl\n");)}
+						else if(Command == 'T')
+						{DEBUG_PRINT(UARTprintf("Type 1 to turn on TCl, type 0 to turn off TCl\n");)}
+						else if(Command == 'A')
+						{DEBUG_PRINT(UARTprintf("Type 1 to turn on Alk, type 0 to turn off Alk\n");)}
+						else if(Command == 'R')
+						{DEBUG_PRINT(UARTprintf("Type 1 to turn on Rerun Cal, type 0 to turn off\n");)}
+						else if(Command == 'B')
+						{DEBUG_PRINT(UARTprintf("Type 1 to run pouch tube priming during next Cal, anything else to cancel\n");)}
+						else if(Command == 'Q')
+						{DEBUG_PRINT(UARTprintf("Type 1-5 to specify which QC sample to run\n");)}
 
 						while(check == 1)
 						{
@@ -1143,117 +1170,72 @@ int main(void) {
 								int32_t UART_Rx = UARTCharGet(UART0_BASE);
 								UARTCharPutNonBlocking(UART0_BASE, UART_Rx); //echo character
 
-								if(UART_Rx == '1')	// 0x0D = enter; use hex because UART_Rx is defined as int32_t because thats what UARTCharGet returns
+								if(Command == 'Q' && UART_Rx >= '1' && UART_Rx <= '5')
 								{
 									check = 2;
+									g_QCSolution = UART_Rx - '0';
+									g_ui32DataRx0[0] = START_TEST;
+									g_ulSSI0RXTO++;
 
-									g_FreeCl = 1;
-
-									EEPROMProgram((uint32_t *) &g_FreeCl, OFFSET_FREE_CL_CYCLE, 4);	// This gets read back in update_MonoCl() which is called in InitBT()
+									DEBUG_PRINT(UARTprintf("\nPress button to run QC %d\n", g_QCSolution);)
 								}
-								else if(UART_Rx == '0')
+								else if(UART_Rx == '0' || UART_Rx == '1')	// 0x0D = enter; use hex because UART_Rx is defined as int32_t because thats what UARTCharGet returns
 								{
 									check = 2;
-
-									g_FreeCl = 0;
-
-									EEPROMProgram((uint32_t *) &g_FreeCl, OFFSET_FREE_CL_CYCLE, 4);	// This gets read back in update_MonoCl() which is called in InitBT()
+									if(Command == 'F')
+										g_FreeCl = UART_Rx - '0';
+									else if(Command == 'T')
+										g_MonoCl = UART_Rx - '0';
+									else if(Command == 'A')
+										g_Alkalinity = UART_Rx - '0';
+									else if(Command == 'R')
+										g_RerunCal = UART_Rx - '0';
+									else if(Command == 'B')
+										PrimePouchTubes = UART_Rx - '0';
+									else // Catching the case where the command was Q 0 was typed
+										check = 0;
 								}
 								else
 									check = 0;
+							}
+						}
 
+						if(check == 0)
+						{
+							DEBUG_PRINT(UARTprintf("Cancelling!\n");)
+						}
+						else if(check == 2)	// Check was  a valid command
+						{
+
+							if(Command == 'F')
+							{
+								EEPROMProgram((uint32_t *) &g_FreeCl, OFFSET_FREE_CL_CYCLE, 4);	// This gets read back in update_MonoCl() which is called in InitBT()
 								DEBUG_PRINT(UARTprintf("\nFCl: %d\n", g_FreeCl);)
 								update_MonoCl();
 							}
-						}
-
-						if(check == 0)
-						{
-							DEBUG_PRINT(UARTprintf("Cancelling!\n");)
-						}
-					}
-
-					if(Command == 'T')
-					{
-						uint8_t check = 1;
-						DEBUG_PRINT(UARTprintf("\n");)
-
-						DEBUG_PRINT(UARTprintf("Type 1 to turn on TCl, type 0 to turn off TCl\n");)
-
-						while(check == 1)
-						{
-							if(UARTCharsAvail(UART0_BASE))
+							else if(Command == 'T')
 							{
-								int32_t UART_Rx = UARTCharGet(UART0_BASE);
-								UARTCharPutNonBlocking(UART0_BASE, UART_Rx); //echo character
-
-								if(UART_Rx == '1')	// 0x0D = enter; use hex because UART_Rx is defined as int32_t because thats what UARTCharGet returns
-								{
-									check = 2;
-
-									g_MonoCl = 1;
-
-									EEPROMProgram((uint32_t *) &g_MonoCl, OFFSET_MONO_CL_CYCLE, 4);	// This gets read back in update_MonoCl() which is called in InitBT()
-								}
-								else if(UART_Rx == '0')
-								{
-									check = 2;
-
-									g_MonoCl = 0;
-
-									EEPROMProgram((uint32_t *) &g_MonoCl, OFFSET_MONO_CL_CYCLE, 4);	// This gets read back in update_MonoCl() which is called in InitBT()
-								}
-								else
-									check = 0;
-
+								EEPROMProgram((uint32_t *) &g_MonoCl, OFFSET_MONO_CL_CYCLE, 4);	// This gets read back in update_MonoCl() which is called in InitBT()
 								DEBUG_PRINT(UARTprintf("\nTCl: %d\n", g_MonoCl);)
 								update_MonoCl();
 							}
-						}
-
-						if(check == 0)
-						{
-							DEBUG_PRINT(UARTprintf("Cancelling!\n");)
-						}
-					}
-
-					if(Command == 'A')
-					{
-						uint8_t check = 1;
-						DEBUG_PRINT(UARTprintf("\n");)
-
-						DEBUG_PRINT(UARTprintf("Type 1 to turn on Alk, type 0 to turn off Alk\n");)
-
-						while(check == 1)
-						{
-							if(UARTCharsAvail(UART0_BASE))
+							else if(Command == 'A')
 							{
-								int32_t UART_Rx = UARTCharGet(UART0_BASE);
-								UARTCharPutNonBlocking(UART0_BASE, UART_Rx); //echo character
-
-								if(UART_Rx == '1')	// 0x0D = enter; use hex because UART_Rx is defined as int32_t because thats what UARTCharGet returns
-								{
-									check = 2;
-									g_Alkalinity = 1;
-									EEPROMProgram((uint32_t *) &g_Alkalinity, OFFSET_ALKALINITY_CYCLE, 4);	// This gets read back in update_Alkalinity() which is called in InitBT()
-								}
-								else if(UART_Rx == '0')
-								{
-									check = 2;
-									g_Alkalinity = 0;
-									EEPROMProgram((uint32_t *) &g_Alkalinity, OFFSET_ALKALINITY_CYCLE, 4);	// This gets read back in update_Alkalinity() which is called in InitBT()
-								}
-								else
-									check = 0;
-
+								EEPROMProgram((uint32_t *) &g_Alkalinity, OFFSET_ALKALINITY_CYCLE, 4);	// This gets read back in update_Alkalinity() which is called in InitBT()
 								DEBUG_PRINT(UARTprintf("\nAlk: %d\n", g_Alkalinity);)
 								update_Alkalinity();
 							}
-						}
+							else if(Command == 'R')
+							{
+								uint32_t holder = g_RerunCal;
+								EEPROMProgram(&holder, OFFSET_CAL_RERUN, 4);	// This gets read back in update_MonoCl() which is called in InitBT()
+								DEBUG_PRINT(UARTprintf("\nRerun Cal: %d\n", g_RerunCal);)
+							}
+							else if(Command == 'B')
+							{
+								DEBUG_PRINT(UARTprintf("\nNext cal prime pouch tubes: %d\n", PrimePouchTubes);)
+							}
 
-						if(check == 0)
-						{
-							DEBUG_PRINT(UARTprintf("Cancelling!\n");)
 						}
 					}
 
@@ -1350,83 +1332,6 @@ int main(void) {
 							{DEBUG_PRINT(UARTprintf("Sat\n");)}
 
 							update_Auto_Cal();
-						}
-					}
-
-					if(Command == 'R')
-					{
-						uint8_t check = 1;
-						DEBUG_PRINT(UARTprintf("\n");)
-
-						DEBUG_PRINT(UARTprintf("Type 1 to turn on Rerun Cal, type 0 to turn off\n");)
-
-						while(check == 1)
-						{
-							if(UARTCharsAvail(UART0_BASE))
-							{
-								int32_t UART_Rx = UARTCharGet(UART0_BASE);
-								UARTCharPutNonBlocking(UART0_BASE, UART_Rx); //echo character
-
-								if(UART_Rx == '1')	// 0x0D = enter; use hex because UART_Rx is defined as int32_t because thats what UARTCharGet returns
-								{
-									check = 2;
-
-									g_RerunCal = 1;
-									uint32_t holder = 1;
-
-									EEPROMProgram(&holder, OFFSET_CAL_RERUN, 4);	// This gets read back in update_MonoCl() which is called in InitBT()
-								}
-								else if(UART_Rx == '0')
-								{
-									check = 2;
-
-									g_RerunCal = 0;
-									uint32_t holder = 0;
-
-									EEPROMProgram(&holder, OFFSET_CAL_RERUN, 4);	// This gets read back in update_MonoCl() which is called in InitBT()
-								}
-								else
-									check = 0;
-
-								DEBUG_PRINT(UARTprintf("\nRerun Cal: %d\n", g_RerunCal);)
-							}
-						}
-
-						if(check == 0)
-						{
-							DEBUG_PRINT(UARTprintf("Cancelling!\n");)
-						}
-					}
-
-					if(Command == 'B')
-					{
-						uint8_t check = 1;
-						DEBUG_PRINT(UARTprintf("\n");)
-						DEBUG_PRINT(UARTprintf("Type 1 to run pouch tube priming during next Cal, anything else to cancel\n");)
-
-						while(check == 1)
-						{
-							if(UARTCharsAvail(UART0_BASE))
-							{
-								int32_t UART_Rx = UARTCharGet(UART0_BASE);
-								UARTCharPutNonBlocking(UART0_BASE, UART_Rx); //echo character
-
-								if(UART_Rx == '1')	// 0x0D = enter; use hex because UART_Rx is defined as int32_t because thats what UARTCharGet returns
-								{
-									check = 2;
-
-									PrimePouchTubes = 1;
-									DEBUG_PRINT(UARTprintf("\nNext cal will prime pouch tubes, resetting ROAM will cancel\n");)
-								}
-								else
-									check = 0;
-
-							}
-						}
-
-						if(check == 0)
-						{
-							DEBUG_PRINT(UARTprintf("Cancelling!\n");)
 						}
 					}
 
@@ -1762,16 +1667,16 @@ int main(void) {
 						Counter++;
 					}
 
-					DEBUG_PRINT(UARTprintf("Air: %d\n", V_AIR);)
-					DEBUG_PRINT(UARTprintf("Samp: %d\n", V_SAMP);)
-					DEBUG_PRINT(UARTprintf("B1: %d\n", V_B1);)
-					DEBUG_PRINT(UARTprintf("B2: %d\n", V_B2);)
-					DEBUG_PRINT(UARTprintf("C2: %d\n", V_C2);)
-					DEBUG_PRINT(UARTprintf("Clean: %d\n", V_CLEAN);)
-					DEBUG_PRINT(UARTprintf("Cal 5: %d\n", V_CAL_2);)
-					DEBUG_PRINT(UARTprintf("Cal 6: %d\n", V_CAL_1);)
-					DEBUG_PRINT(UARTprintf("T1: %d\n", V_T1);)
-					DEBUG_PRINT(UARTprintf("Rinse: %d\n", V_RINSE);)
+//					DEBUG_PRINT(UARTprintf("Air: %d\n", V_AIR);)
+//					DEBUG_PRINT(UARTprintf("Samp: %d\n", V_SAMP);)
+//					DEBUG_PRINT(UARTprintf("B1: %d\n", V_B1);)
+//					DEBUG_PRINT(UARTprintf("B2: %d\n", V_B2);)
+//					DEBUG_PRINT(UARTprintf("C2: %d\n", V_C2);)
+//					DEBUG_PRINT(UARTprintf("Clean: %d\n", V_CLEAN);)
+//					DEBUG_PRINT(UARTprintf("Cal 5: %d\n", V_CAL_2);)
+//					DEBUG_PRINT(UARTprintf("Cal 6: %d\n", V_CAL_1);)
+//					DEBUG_PRINT(UARTprintf("T1: %d\n", V_T1);)
+//					DEBUG_PRINT(UARTprintf("Rinse: %d\n", V_RINSE);)
 
 #else
 					while(GPIOPinRead(IO_BUTTON_BASE, IO_BUTTON_PIN) == 0);
@@ -1883,6 +1788,14 @@ int main(void) {
 
 							g_state = STATE_MEASUREMENT; // Switch to test mode
 							g_next_state = STATE_IDLE;
+
+//							// Goodbye Ondrej
+//							g_state = STATE_IDLE;
+//							SetLED(GREEN_BUTTON_BLINK, 1);
+//							PumpStepperRunTimeSpeed_AbortReady(FW, 140, 2500);
+//							PumpStepperRunTimeSpeed_AbortReady(FW, 140, 2500);
+//							SetLED(GREEN_BUTTON_BLINK, 0);
+//							break;
 						}
 					}
 				} // if button or SPI test instruction
@@ -3925,7 +3838,8 @@ int main(void) {
 							userDelay(valve_delay, 1);
 						}
 
-
+						// Save the H2 mV
+						MemoryWrite(Cal_page, OFFSET_H2_1_MV_CAL6_B2, 8, (uint8_t *) &ISE_mV_Cal_1_B2[ISEs.pH_H2.index]);	// Save both H2 mV to memory
 					}
 #endif
 
@@ -5555,12 +5469,16 @@ int main(void) {
 									update_Status(STATUS_CALIBRATION, OPERATION_CAL_POSTCHECK);
 
 									uint8_t Storage_Port;
-									if(ISEs.Config == PH_CL_CART && Sols->Cond_EEP_Cal_2 > 900)	// pH only cartridge with pH 9 clean in place of Cal 2
+#ifdef STORE_HIGH_CONC_CAL
+									DEBUG_PRINT(UARTprintf("Pumping Cal 5 as Postrinse\n");)
+									Storage_Port = V_CAL_2;
+#else
+									/*if(ISEs.Config == PH_CL_CART && Sols->Cond_EEP_Cal_2 > 900)	// pH only cartridge with pH 9 clean in place of Cal 2
 									{
 										DEBUG_PRINT(UARTprintf("Pumping Cal 2\n");)
 											Storage_Port = V_CAL_2;
 									}
-									else if((STORE_IN_CLEAN == 0 || (ISEs.Config == PH_CL_CART && STORE_PH6_CLEAN == 0)) && Sols->pH_EEP_Clean < 8.5)
+									else */if((STORE_IN_CLEAN == 0 || (ISEs.Config == PH_CL_CART && STORE_PH6_CLEAN == 0)) && Sols->pH_EEP_Clean < 8.5)
 									{
 										DEBUG_PRINT(UARTprintf("Pumping Postrinse\n");)
 											Storage_Port = V_RINSE;
@@ -5570,6 +5488,7 @@ int main(void) {
 										DEBUG_PRINT(UARTprintf("Pumping Clean as Postrinse\n");)
 											Storage_Port = V_CLEAN;
 									}
+#endif
 
 
 									RunValveToPossition_Bidirectional(V_AIR, VALVE_STEPS_PER_POSITION);
@@ -5808,12 +5727,17 @@ int main(void) {
 			// Prime and reset buffers and titrants
 			//
 			uint8_t Storage_Port;
+#ifdef STORE_HIGH_CONC_CAL
+			DEBUG_PRINT(UARTprintf("Pumping Cal 5 as Postrinse\n");)
+			Storage_Port = V_CAL_2;
+#else
 			/*if(ISEs.Config == PH_CL_CART && Sols->Cond_EEP_Cal_2 > 900)	// pH only cartridge with pH 9 clean in place of Cal 2
 				Storage_Port = V_CAL_2;
 			else */if((STORE_IN_CLEAN == 0 || (ISEs.Config == PH_CL_CART && STORE_PH6_CLEAN == 0)) && Sols->pH_EEP_Clean < 8.5)
 				Storage_Port = V_RINSE;
 			else
 				Storage_Port = V_CLEAN;
+#endif
 
 			PrintTime();
 			//#ifdef TESTING_MODE
@@ -7580,6 +7504,16 @@ int main(void) {
 			if(g_state != STATE_MEASUREMENT)
 				break;
 
+#ifdef TESTING_MODE
+			TimerIntDisable(WTIMER0_BASE, TIMER_TIMA_TIMEOUT);
+			IntDisable(INT_WTIMER0A);
+			TimerLoadSet64(WTIMER0_BASE, 0xFFFFFFFFFFFFFFFF); // Set timer for 5 minutes, if timer expires hibernate device
+			TimerConfigure(WTIMER0_BASE, TIMER_CFG_PERIODIC_UP);
+			TimerEnable(WTIMER0_BASE, TIMER_BOTH);
+
+			uint64_t start_clock = TimerValueGet64(WTIMER0_BASE);
+#endif
+
 			update_Status(STATUS_TEST, OPERATION_TEST_RINSE);
 
 			//			// TODO: Set pump variables for test
@@ -7914,12 +7848,21 @@ int main(void) {
 				}
 			}
 
+#ifdef TESTING_MODE
+			if(g_QCSolution >= 1 && g_QCSolution <= 5)
+			{
+				DEBUG_PRINT(UARTprintf("\nQC Solution %d\n", g_QCSolution);)
+			}
+#endif
+
+			DEBUG_PRINT(UARTprintf("\nTest Number %d\n", Test_Number);)
+
 			float T_Therm;
 			if(1)	// Isolating the thermistor variables T_Therm_S, T_Therm_F, and Therm_Correction becasue this is the only place they are needed
 			{
 				float T_Therm_S = ReadThermistor();
 
-				DEBUG_PRINT(UARTprintf("\nPriming %d uL of sample... \n", PumpVol_Sample_Prime);)
+				DEBUG_PRINT(UARTprintf("\nPriming %d uL of sample\n", PumpVol_Sample_Prime);)
 				Sensor_in_rinse = 0;
 				RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
 				PumpVolume(FW, PumpVol_Sample_Prime, Speed_Fast, 1);
@@ -7959,6 +7902,11 @@ int main(void) {
 				userDelay(valve_delay, 1);
 			}
 
+#ifdef TESTING_MODE
+			uint64_t prime_clock = TimerValueGet64(WTIMER0_BASE);
+			DEBUG_PRINT(UARTprintf("Time to prime: %d\n", (uint32_t) ((prime_clock - start_clock)/SysCtlClockGet()));)
+			DEBUG_PRINT(UARTprintf("Total time elapsed: %d s, or %d m %d s\n", (uint32_t) ((prime_clock - start_clock)/SysCtlClockGet()), (uint32_t) ((prime_clock - start_clock)/SysCtlClockGet())/60,(uint32_t) ((prime_clock - start_clock)/SysCtlClockGet())%60);)
+#endif
 //			if(STRETCH_SENSOR && (gui32Error & ABORT_ERRORS) == 0)
 //			{
 //				if(CheckSensorSat())
@@ -8140,6 +8088,12 @@ int main(void) {
 				}
 			}
 #endif	// STRAIGHT_TO_CL
+
+#ifdef TESTING_MODE
+			uint64_t rinse_clock = TimerValueGet64(WTIMER0_BASE);
+			DEBUG_PRINT(UARTprintf("Time to rinse: %d\n", (uint32_t) ((rinse_clock - prime_clock)/SysCtlClockGet()));)
+			DEBUG_PRINT(UARTprintf("Total time elapsed: %d s, or %d m %d s\n", (uint32_t) ((rinse_clock - start_clock)/SysCtlClockGet()), (uint32_t) ((rinse_clock - start_clock)/SysCtlClockGet())/60,(uint32_t) ((rinse_clock - start_clock)/SysCtlClockGet())%60);)
+#endif
 
 			//
 			// Flow chart measurement green section, sample
@@ -8686,6 +8640,24 @@ int main(void) {
 						IS = 0.000016 * Conductivity;
 					else
 						IS = 0.00001 * Conductivity;
+
+#ifdef TESTING_MODE
+					if(g_QCSolution >= 1 && g_QCSolution <= 5)
+					{
+						if(g_QCSolution == 1)
+							IS = .0456;
+						else if(g_QCSolution == 2)
+							IS = .0437;
+						else if(g_QCSolution == 3)
+							IS = .0107;
+						else if(g_QCSolution == 4)
+							IS = .00757;
+						else if(g_QCSolution == 5)
+							IS = .00615;
+
+						DEBUG_PRINT(UARTprintf("Setting IS to: %d/100000\n");)
+					}
+#endif
 
 					//				float Ca_Slope_SampT[2];//, Ca_E_Samp_TCor[2];//, Ca_Samp[2];
 					float pCa_Rinse;
@@ -9341,6 +9313,12 @@ int main(void) {
 #endif	// STRAIGHT_TO_CL
 			}
 
+#ifdef TESTING_MODE
+			uint64_t samp_clock = TimerValueGet64(WTIMER0_BASE);
+			DEBUG_PRINT(UARTprintf("Time to samp: %d\n", (uint32_t) ((samp_clock - rinse_clock)/SysCtlClockGet()));)
+			DEBUG_PRINT(UARTprintf("Total time elapsed: %d s, or %d m %d s\n", (uint32_t) ((samp_clock - start_clock)/SysCtlClockGet()), (uint32_t) ((samp_clock - start_clock)/SysCtlClockGet())/60,(uint32_t) ((samp_clock - start_clock)/SysCtlClockGet())%60);)
+#endif
+
 			//
 			// Run Alkalinity after sample but before chlorine
 			//
@@ -9360,20 +9338,34 @@ int main(void) {
 					float ISE_E_Samp_T1[10] = {0,0,0,0,0,0,0,0,0,0};
 					float *pH_H2_E_Samp_T1 = &ISE_E_Samp_T1[ISEs.pH_H2.index];
 					float *pH_Cr_E_Samp_T1 = &ISE_E_Samp_T1[ISEs.pH_Cr.index];
-#ifdef PRINT_UART
-					float *NH4_E_Samp_T1 = &ISE_E_Samp_T1[ISEs.NH4.index];
-#endif
+//#ifdef PRINT_UART
+//					float *NH4_E_Samp_T1 = &ISE_E_Samp_T1[ISEs.NH4.index];
+//#endif
 					float pH_Samp_T1[20] = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};	// Collect 2 pH readings for each sensor, have to make it 20 for max case
 					float *pH_H2_Samp_T1 = &pH_Samp_T1[ISEs.pH_H2.index];
 					float *pH_Cr_Samp_T1 = &pH_Samp_T1[ISEs.pH_Cr.index];
 					float Volume_T1_Endpoint[10] = {0,0,0,0,0,0,0,0,0,0};	// Sensor 1, Sensor 2, Sensor 3
-
 
 					//					float NH4_E_Samp_T1[3] = {0,0,0};
 					float Alk_Slope[10] = {0,0,0,0,0,0,0,0,0,0};
 					float T_Samp_T1[2];
 					uint8_t method[10] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};	// {Sensor 1, Sensor 2, Sensor 3}
 					uint8_t sensor_points[10] = {0,0,0,0,0,0,0,0,0,0};	// Counter for each sensor to determine which mix each sensor is on
+
+					ConnectMemory(1);
+
+					// Calculate the H2 mV offset of Rinse from Cal 6 - Cal 5 line
+					float pH_H2_E_Rinse_Adj[2] = {pH_H2_E_Rinse[0], pH_H2_E_Rinse[1]};
+//					for(i = 0; i < 2; i++)
+//					{
+//						float H2_mV_Rinse = Build_float(MemoryRead(Find_Cal_page(Last_cal_passed[i + ISEs.pH_H2.index]), OFFSET_CR_ISE_1_RINSE + ((i + ISEs.pH_H2.index) * 4), 4));
+//						float H2_pH_Cal_T = Calc_pH_TCor(Sols->pH_EEP_Rinse, T_EEP_Cal, 25, 0, Sols->K_T_pH_Rinse);
+//						float H2_Cal_Int = Build_float(MemoryRead(Find_Cal_page(Last_cal_passed[i + ISEs.pH_H2.index]), OFFSET_ISE_1_INT + ((i + ISEs.pH_H2.index) * 4), 4));
+//						float H2_Rinse_offset = H2_mV_Rinse - (pH_H2_EEP_Slope[i] * H2_pH_Cal_T + H2_Cal_Int);
+//						pH_H2_E_Rinse_Adj[i] -= H2_Rinse_offset;
+//
+//						DEBUG_PRINT(UARTprintf("H2 %d rinse mV offset: %d / 1000\n", i + 1, (int) (H2_Rinse_offset * 1000));)
+//					}
 
 					//					float Steps_Sample[2] = {Steps_PreT1 + Steps_PostT1, Steps_PreT1 + Steps_PostT1};	// First mixing, Second mixing
 					//					float Steps_Samp_Endpoint[3];	// Sensor 1, Sensor 2, Sensor 3
@@ -9382,6 +9374,11 @@ int main(void) {
 //					float Steps_Samp_Endpoint = Steps_Sample * Pump_Ratio;
 
 					float PumpVol_T1[2];	// First mixing, Second mixing
+
+					// 1/12/2022: Found our Alkalinity is consistently about 20 ppm high, believe this is caused by first 30 steps of acid pumping
+					//	not moving solution but building pressure to move solution, subtracting this amount from calculations to get alkalinity
+					float Volume_T1_dead = 16.8 * 30.0/610.0; //TOD: Making a guess here that the volume lost will be the same between pumps and not related to steps, guessing its volume lost throughout the chips //PumpVolRev * .3/Pump_Ratio;
+
 
 					if(Cond_Cal_Status && ISE_Cal_Status[ISEs.Ca.index + T_Chosen_Ca] && ISE_Cal_Status[ISEs.TH.index + T_Chosen_TH] && ISE_Cal_Status[ISEs.pH_Cr.index + T_Chosen_pH] && ISEs.Ca.size > 0 && ISEs.TH.size > 0)
 					{
@@ -9409,6 +9406,25 @@ int main(void) {
 					else
 						PumpVol_T1[0] = PumpVolRev * .500/Pump_Ratio;	// If we don't have TH or conductivity to start with, set half a revolution
 
+#ifdef TESTING_MODE
+					if(g_QCSolution >= 1 && g_QCSolution <= 5)
+					{
+						DEBUG_PRINT(UARTprintf("This is QC solution %d setting pump volumes\n", g_QCSolution);)
+						float Target_Alk;
+						if(g_QCSolution == 1)
+							Target_Alk = 50;
+						if(g_QCSolution == 2)
+							Target_Alk = 300;
+						if(g_QCSolution == 3)
+							Target_Alk = 100;
+						if(g_QCSolution == 4)
+							Target_Alk = 20;
+						if(g_QCSolution == 5)
+							Target_Alk = 200;
+						PumpVol_T1[0] = Target_Alk * Volume_Sample / (50044.0 * Sols->HCl_N) + Volume_T1_dead;	// Alk SM for QC 1 is ~44, set to
+					}
+#endif	// TESTING_MODE
+
 					// Double check the calculations, if anythings wrong set to a max of 500 steps or min of 50 steps
 					if(PumpVol_T1[0] != PumpVol_T1[0])	// Make sure this is a number, not a NAN
 						PumpVol_T1[0] = PumpVolRev * .500/Pump_Ratio;
@@ -9418,10 +9434,6 @@ int main(void) {
 						PumpVol_T1[0] = PumpVolRev * .050/Pump_Ratio;
 
 					PumpVol_T1[1] = PumpVol_T1[0] + PumpVolRev * .050/Pump_Ratio;	// Add 50 steps as initial guess for second mix, this gets recalculated later if pH is below 4.5
-
-					// 1/12/2022: Found our Alkalinity is consistently about 20 ppm high, believe this is caused by first 30 steps of acid pumping
-					//	not moving solution but building pressure to move solution, subtracting this amount from calculations to get alkalinity
-					float Volume_T1_dead = 16.8 * 30.0/610.0; //TOD: Making a guess here that the volume lost will be the same between pumps and not related to steps, guessing its volume lost throughout the chips //PumpVolRev * .3/Pump_Ratio;
 
 #ifdef PRINT_UART
 					DEBUG_PRINT(UARTprintf("Subtracting %d nL of T1 from calculations, this is equivalent to 30 steps on 2020 pump heads\n", (int) (Volume_T1_dead * 1000));)
@@ -9650,7 +9662,7 @@ int main(void) {
 						//							Save_pH |= 1 << (ISEs.pH_H2.index + i);
 						//						CollectISEmV(ISE_E_Samp_T1, Save_pH, ISE_WAIT, PRINT_ISE_TIME_DATA, &ISEs);
 						CollectISEmV(ISE_E_Samp_T1, 0xFFFF, ISE_WAIT, PRINT_ISE_TIME_DATA, &ISEs);
-						#else
+#else
 						while(ui8Times_mixed < 2)
 						{
 							uint8_t in_range = 0;	// Need two points with pH below 6.3
@@ -9818,17 +9830,49 @@ int main(void) {
 						//
 						// pH Measurement
 						//
+						DEBUG_PRINT(UARTprintf("Unadjusted H2 readings:");)
 						for(i = 0; i < ISEs.pH_H2.size; i++)
 						{
 							float pH_H2_Slope_Samp_T1T = pH_H2_EEP_Slope[i] * (T_Samp_T1[mixing_index] + 273) / (T_EEP_Cal + 273);	// Temperature corrected slope
 							pH_H2_Samp_T1[i + (mixing_index * 10)] = pH_TCor_Rinse + ((pH_H2_E_Samp_T1[i] - pH_H2_E_Rinse[i]) / pH_H2_Slope_Samp_T1T); // pH of sample
+							DEBUG_PRINT(UARTprintf("\t%d", (int) (pH_H2_Samp_T1[i + (mixing_index * 10)] * 1000));)
 						}
+						DEBUG_PRINT(UARTprintf("\n");)
 
 						for(i = 0; i < ISEs.pH_Cr.size; i++)
 						{
 							float pH_Cr_Slope_Samp_T1T = pH_Cr_EEP_Slope[i] * (T_Samp_T1[mixing_index] + 273) / (T_EEP_Cal + 273);	// Temperature corrected slope
 							pH_Cr_Samp_T1[i + (mixing_index * 10)] = pH_TCor_Rinse + ((pH_Cr_E_Samp_T1[i] - pH_Cr_E_Rinse[i]) / pH_Cr_Slope_Samp_T1T); // pH of sample
 						}
+
+						uint8_t Mix_Chosen_pH_Cr = Choose_Sensor(Cal_Number, pH_Cr_Samp_T1, pH_Cr_E_Rinse, T_Rinse, ISEs.pH_Cr, Sols);
+
+//						// Adjust based on daily calibration difference between Rinse and Cal 6
+//						// Adjust based on Cr sensor
+//						for(i = 0; i < ISEs.pH_H2.size; i++)
+//						{
+//							float pH_H2_Slope_Samp_T1T = pH_H2_EEP_Slope[i] * (T_Samp_T1[mixing_index] + 273) / (T_EEP_Cal + 273);	// Temperature corrected slope
+//							pH_H2_Samp_T1[i + (mixing_index * 10)] = pH_TCor_Rinse + ((pH_H2_E_Samp_T1[i] - pH_H2_E_Rinse_Adj[i]) / pH_H2_Slope_Samp_T1T); // pH of sample
+//						}
+
+
+						// Adjust based on Cr sensor
+						for(i = 0; i < ISEs.pH_H2.size; i++)
+						{
+							float pH_H2_Slope_Samp_T1T = pH_H2_EEP_Slope[i] * (T_Samp_T1[mixing_index] + 273) / (T_EEP_Cal + 273);	// Temperature corrected slope
+							if(pH_Cr_Samp_T1[Mix_Chosen_pH_Cr] < pH_H2_Samp_T1[i] && mixing_index == 0)
+							{
+								pH_H2_Samp_T1[i] = pH_Cr_Samp_T1[Mix_Chosen_pH_Cr];
+								pH_H2_E_Rinse_Adj[i] = -((pH_H2_Samp_T1[i] - pH_TCor_Rinse) * pH_H2_Slope_Samp_T1T - pH_H2_E_Samp_T1[i]);
+								DEBUG_PRINT(UARTprintf("Adjusting H2 %d to align with Cr %d: %d\n", i + 1, Mix_Chosen_pH_Cr + 1, (int) (pH_Cr_Samp_T1[Mix_Chosen_pH_Cr] * 1000));)
+							}
+							else
+							{
+								float pH_H2_Slope_Samp_T1T = pH_H2_EEP_Slope[i] * (T_Samp_T1[mixing_index] + 273) / (T_EEP_Cal + 273);	// Temperature corrected slope
+								pH_H2_Samp_T1[i + (mixing_index * 10)] = pH_TCor_Rinse + ((pH_H2_E_Samp_T1[i] - pH_H2_E_Rinse_Adj[i]) / pH_H2_Slope_Samp_T1T); // pH of sample
+							}
+						}
+
 
 #ifdef PRINT_UART
 						DEBUG_PRINT(UARTprintf("pH of mixed T1:\n");)
@@ -9841,53 +9885,53 @@ int main(void) {
 							DEBUG_PRINT(UARTprintf("\t%d", (int) (pH_Cr_Samp_T1[i + (mixing_index * 10)] * 1000));)
 						DEBUG_PRINT(UARTprintf("\n");)
 
-						float NH4_NH3_N_Free_T1[2];
-						if(ISEs.NH4.size > 0)
-						{
-							//
-							// NH4 Measurement
-							//
-							float IS_T1;
-							if(Conductivity_T1 > 62)
-								IS_T1 = 0.000016 * Conductivity_T1;
-							else
-								IS_T1 = 0.00001 * Conductivity_T1;
-
-							float NH4_Alpha_T1 = pow(10, -pH_H2_Samp_T1[T_Chosen_pH + (mixing_index * 10)]) / (pow(10, -pH_H2_Samp_T1[T_Chosen_pH + (mixing_index * 10)]) + pow(10, -(0.09018 + 2729.92/T_RS)));
-
-							float pNH4_Rinse;
-							if(Sols->Ca_EEP_Rinse < 10)	// Values are p-values
-								pNH4_Rinse = Sols->NH4_EEP_Rinse;
-							else	// Values are concentration
-								pNH4_Rinse = Calc_pNH4(Sols->NH4_EEP_Rinse, pH_TCor_Rinse, 0, T_RS, Sols->IS_RINSE);
-
-							// TODO: Enter potassium and sodium interference values
-							float K_interference = 1.5; // ppm
-							float Na_interference = 15; // ppm
-
-							//							float NH4_NH3_N_Free_T1[2];
-							for(i = 0; i < ISEs.NH4.size; i++)
-							{
-								float NH4_Slope_RST = NH4_EEP_Slope[i] * (T_RS + 273) / (T_EEP_Cal + 273);	// Temperature corrected slope
-								float NH4_Samp = pNH4_Rinse + ((NH4_E_Samp_T1[i] - NH4_E_Rinse[i]) / NH4_Slope_RST);	// pNH4
-
-								float Activity_NH4_K_Na = pow(10, -NH4_Samp);
-
-								float Activity_K = K_interference / 39098.3 * Lambda_K(T_RS, IS_T1);
-								float Activity_Na = Na_interference / 22989.8 * Lambda_Na(T_RS, IS_T1);
-								float Activity_Total = Activity_NH4_K_Na + ((1 - pow(10, LOG_K_K_NH4)) * Activity_K) + ((1 - pow(10, LOG_K_NA_NH4)) * Activity_Na);
-								float Activity_NH4 = Activity_Total - Activity_K - Activity_Na;
-
-								float NH4_Ammonium_T1 = Activity_NH4 / Lambda_NH4(T_RS, IS_T1) * 14000;
-								NH4_NH3_N_Free_T1[i] = NH4_Ammonium_T1 / NH4_Alpha_T1;
-							}
-						}
-
+//						float NH4_NH3_N_Free_T1[2];
 //						if(ISEs.NH4.size > 0)
-//							DEBUG_PRINT(UARTprintf("NH4 of mixed T1:\t=%d/1000\t=%d/1000\n\n", (int) (NH4_NH3_N_Free_T1[0] * 1000), (int) (NH4_NH3_N_Free_T1[1] * 1000));)
-
-						for(i = 0; i < ISEs.NH4.size; i++)
-							{DEBUG_PRINT(UARTprintf("NH4 %d, mixed T1:\t%d\t=%d/1000\n", i + 1, (int) (NH4_NH3_N_Free_T1[i] * 1000));)}
+//						{
+//							//
+//							// NH4 Measurement
+//							//
+//							float IS_T1;
+//							if(Conductivity_T1 > 62)
+//								IS_T1 = 0.000016 * Conductivity_T1;
+//							else
+//								IS_T1 = 0.00001 * Conductivity_T1;
+//
+//							float NH4_Alpha_T1 = pow(10, -pH_H2_Samp_T1[T_Chosen_pH + (mixing_index * 10)]) / (pow(10, -pH_H2_Samp_T1[T_Chosen_pH + (mixing_index * 10)]) + pow(10, -(0.09018 + 2729.92/T_RS)));
+//
+//							float pNH4_Rinse;
+//							if(Sols->Ca_EEP_Rinse < 10)	// Values are p-values
+//								pNH4_Rinse = Sols->NH4_EEP_Rinse;
+//							else	// Values are concentration
+//								pNH4_Rinse = Calc_pNH4(Sols->NH4_EEP_Rinse, pH_TCor_Rinse, 0, T_RS, Sols->IS_RINSE);
+//
+//							// TOD: Enter potassium and sodium interference values
+//							float K_interference = 1.5; // ppm
+//							float Na_interference = 15; // ppm
+//
+//							//							float NH4_NH3_N_Free_T1[2];
+//							for(i = 0; i < ISEs.NH4.size; i++)
+//							{
+//								float NH4_Slope_RST = NH4_EEP_Slope[i] * (T_RS + 273) / (T_EEP_Cal + 273);	// Temperature corrected slope
+//								float NH4_Samp = pNH4_Rinse + ((NH4_E_Samp_T1[i] - NH4_E_Rinse[i]) / NH4_Slope_RST);	// pNH4
+//
+//								float Activity_NH4_K_Na = pow(10, -NH4_Samp);
+//
+//								float Activity_K = K_interference / 39098.3 * Lambda_K(T_RS, IS_T1);
+//								float Activity_Na = Na_interference / 22989.8 * Lambda_Na(T_RS, IS_T1);
+//								float Activity_Total = Activity_NH4_K_Na + ((1 - pow(10, LOG_K_K_NH4)) * Activity_K) + ((1 - pow(10, LOG_K_NA_NH4)) * Activity_Na);
+//								float Activity_NH4 = Activity_Total - Activity_K - Activity_Na;
+//
+//								float NH4_Ammonium_T1 = Activity_NH4 / Lambda_NH4(T_RS, IS_T1) * 14000;
+//								NH4_NH3_N_Free_T1[i] = NH4_Ammonium_T1 / NH4_Alpha_T1;
+//							}
+//						}
+//
+////						if(ISEs.NH4.size > 0)
+////							DEBUG_PRINT(UARTprintf("NH4 of mixed T1:\t=%d/1000\t=%d/1000\n\n", (int) (NH4_NH3_N_Free_T1[0] * 1000), (int) (NH4_NH3_N_Free_T1[1] * 1000));)
+//
+//						for(i = 0; i < ISEs.NH4.size; i++)
+//							{DEBUG_PRINT(UARTprintf("NH4 %d, mixed T1:\t%d\t=%d/1000\n", i + 1, (int) (NH4_NH3_N_Free_T1[i] * 1000));)}
 #endif	// PRINT_UART
 
 						//
@@ -9964,6 +10008,7 @@ int main(void) {
 							}
 						}
 
+						float pH_offset[2] = {0,0};
 						if(in_range > 0)	// Check that at least one sensor was in range before incrementing the mixing index
 						{
 							if(mixing_index == 1) // This is the second mix, want to make sure a sensor has 2 valid points before incrementing the counter
@@ -10041,6 +10086,32 @@ int main(void) {
 									}
 #endif	// UNIVERSAL_PICKING_FUNCTION
 
+									// Look at the difference between the two mixes to predict what the pH actually is
+									for(i = 0; i < ISEs.pH_H2.size; i++)
+									{
+										float Alk_Slope = (((Volume_Sample + (float) (PumpVol_T1[1] - Volume_T1_dead)) * pow(10, -pH_H2_Samp_T1[i + 10])) - ((Volume_Sample + (float) (PumpVol_T1[0] - Volume_T1_dead)) * pow(10, -pH_H2_Samp_T1[i]))) / ((float) (PumpVol_T1[1] - Volume_T1_dead) - (float) (PumpVol_T1[0] - Volume_T1_dead));
+										if(Alk_Slope < Sols->HCl_N)
+										{
+											DEBUG_PRINT(UARTprintf("Based on difference it appears actual pH is lower than what H2 %d measured\n", i + 1);)
+
+//											float pH_offset = 0;
+											while(Alk_Slope < Sols->HCl_N)
+											{
+												pH_offset[i] -= 0.1;
+												Alk_Slope = (((Volume_Sample + (float) (PumpVol_T1[1] - Volume_T1_dead)) * pow(10, -(pH_H2_Samp_T1[i + 10] + pH_offset[i]))) - ((Volume_Sample + (float) (PumpVol_T1[0] - Volume_T1_dead)) * pow(10, -(pH_H2_Samp_T1[i] + pH_offset[i])))) / ((float) (PumpVol_T1[1] - Volume_T1_dead) - (float) (PumpVol_T1[0] - Volume_T1_dead));
+											}
+											pH_offset[i] += 0.1;	// Take one step back up to underestimate the change rather than overestimate
+											DEBUG_PRINT(UARTprintf("Estimated to be about %d /1000 lower\n", (int) (pH_offset[i] * 1000));)
+											float pH_Min = -log10(Sols->HCl_N * (PumpVol_T1[1] - Volume_T1_dead) / (PumpVol_T1[1] - Volume_T1_dead + Volume_Sample));
+											if((pH_H2_Samp_T1[i + 10] + pH_offset[i]) < pH_Min && pH_offset[i] < 0)
+											{
+												pH_offset[i] = pH_Min - pH_H2_Samp_T1[i + 10];
+												DEBUG_PRINT(UARTprintf("This seems unrealistic, setting to %d / 1000 lower\n", (int) (pH_offset[i] * 1000));)
+											}
+										}
+									}
+
+
 									// Need to decide which mix to keep...
 									if(Mix_Chosen_pH_1 == Mix_Chosen_pH_2)
 									{
@@ -10088,8 +10159,8 @@ int main(void) {
 									Mix_Chosen_pH = Choose_Sensor(Cal_Number, pH_Samp_T1, pH_Cr_E_Rinse, T_Rinse, ISEs.pH_Cr, Sols);
 #endif	// UNIVERSAL_PICKING_FUNCTION
 
-								DEBUG_PRINT(UARTprintf("Using pH of %d pH * 1000 to calculate steps for second mix!\n", (int) (pH_H2_Samp_T1[Mix_Chosen_pH] * 1000));)
-								float Volume_Temp = (((float) (PumpVol_T1[0] - Volume_T1_dead) * (Sols->HCl_N - pow(10, -pH_H2_Samp_T1[Mix_Chosen_pH])) + Volume_Sample * (pow(10, -3.6) - pow(10, -pH_H2_Samp_T1[Mix_Chosen_pH]))) / (Sols->HCl_N - pow(10, -3.6))) + Volume_T1_dead;
+								DEBUG_PRINT(UARTprintf("Using pH of %d pH * 1000 to calculate steps for second mix!\n", (int) ((pH_H2_Samp_T1[Mix_Chosen_pH] + pH_offset[Mix_Chosen_pH]) * 1000));)
+								float Volume_Temp = (((float) (PumpVol_T1[0] - Volume_T1_dead) * (Sols->HCl_N - pow(10, -(pH_H2_Samp_T1[Mix_Chosen_pH] + pH_offset[Mix_Chosen_pH]))) + Volume_Sample * (pow(10, -3.6) - pow(10, -(pH_H2_Samp_T1[Mix_Chosen_pH] + pH_offset[Mix_Chosen_pH])))) / (Sols->HCl_N - pow(10, -3.6))) + Volume_T1_dead;
 
 
 								DEBUG_PRINT(UARTprintf("Steps for second mix calculated to be %d steps, or %d nL!\n", (int) (Volume_Temp * Pump_Ratio * 1000.0 / PumpVolRev), (int) (Volume_Temp * 1000.0));)
@@ -10119,7 +10190,7 @@ int main(void) {
 								if((PumpVol_T1[0] - PumpVol_T1[1]) < PumpVolRev * .025/Pump_Ratio)	// Check that there is at least 25 steps difference between the two pump cycles
 								{
 									DEBUG_PRINT(UARTprintf("Step difference between the first and second mix is less than 25, recalculating to get to 4.0\n");)
-									Volume_Temp = (((float) (PumpVol_T1[0] - Volume_T1_dead) * (Sols->HCl_N - pow(10, -pH_H2_Samp_T1[Mix_Chosen_pH])) + Volume_Sample * (pow(10, -4.0) - pow(10, -pH_H2_Samp_T1[Mix_Chosen_pH]))) / (Sols->HCl_N - pow(10, -4.0))) + Volume_T1_dead;
+									Volume_Temp = (((float) (PumpVol_T1[0] - Volume_T1_dead) * (Sols->HCl_N - pow(10, -(pH_H2_Samp_T1[Mix_Chosen_pH] + pH_offset[Mix_Chosen_pH]))) + Volume_Sample * (pow(10, -4.0) - pow(10, -(pH_H2_Samp_T1[Mix_Chosen_pH] + pH_offset[Mix_Chosen_pH])))) / (Sols->HCl_N - pow(10, -4.0))) + Volume_T1_dead;
 									if(Volume_Temp > .450 * PumpVolRev / Pump_Ratio)	// Check
 									{
 										Volume_Temp = .450 * PumpVolRev / Pump_Ratio;
@@ -10135,14 +10206,27 @@ int main(void) {
 									{
 										if(pH_H2_Samp_T1[Mix_Chosen_pH] > 3)
 										{
-											DEBUG_PRINT(UARTprintf("Step difference between the first and second mix still less than 25 steps, adding 25 steps to original mix\n", (int) (Volume_Temp * Pump_Ratio * 1000 / PumpVolRev), (int) (Volume_Temp * 1000));)
-											PumpVol_T1[1] = PumpVol_T1[0] + (PumpVolRev * .025/Pump_Ratio);
+//											DEBUG_PRINT(UARTprintf("Step difference between the first and second mix still less than 25 steps, adding 25 steps to original mix\n");)
+//											PumpVol_T1[1] = PumpVol_T1[0] + (PumpVolRev * .025/Pump_Ratio);
+
+											DEBUG_PRINT(UARTprintf("Step difference between the first and second mix still less than 25 steps, calculating to shift pH 0.3\n");)
+											Volume_Temp = (((float) (PumpVol_T1[0] - Volume_T1_dead) * (Sols->HCl_N - pow(10, -(pH_H2_Samp_T1[Mix_Chosen_pH] + pH_offset[Mix_Chosen_pH]))) + Volume_Sample * (pow(10, -(pH_H2_Samp_T1[Mix_Chosen_pH] + pH_offset[Mix_Chosen_pH] - .3)) - pow(10, -(pH_H2_Samp_T1[Mix_Chosen_pH] + pH_offset[Mix_Chosen_pH])))) / (Sols->HCl_N - pow(10, -(pH_H2_Samp_T1[Mix_Chosen_pH] + pH_offset[Mix_Chosen_pH] - .3)))) + Volume_T1_dead;
+											if((PumpVol_T1[0] - Volume_Temp) < PumpVolRev * .025/Pump_Ratio)
+											{
+												DEBUG_PRINT(UARTprintf("Step difference calculated is less than 25 steps, setting to 25 steps plus original mix\n");)
+												PumpVol_T1[1] = PumpVol_T1[0] + (PumpVolRev * .025/Pump_Ratio);
+											}
+											else
+											{
+												DEBUG_PRINT(UARTprintf("Pump volume calculated to be %d nL or %d steps\n", (int) (Volume_Temp * 1000), (int) (Volume_Temp * Pump_Ratio * 1000.0 / PumpVolRev));)
+												PumpVol_T1[1] = Volume_Temp;
+											}
 										}
 										else
 										{
 											DEBUG_PRINT(UARTprintf("First mix below 3, then calculated that removing 25 steps would be over 4 so just calculate based on the first mix :(\n");)
 
-											Volume_Temp = (((float) (PumpVol_T1[0] - Volume_T1_dead) * (Sols->HCl_N - pow(10, -pH_H2_Samp_T1[Mix_Chosen_pH])) + Volume_Sample * (pow(10, -4.5) - pow(10, -pH_H2_Samp_T1[Mix_Chosen_pH]))) / (Sols->HCl_N - pow(10, -4.5))) + Volume_T1_dead;
+											Volume_Temp = (((float) (PumpVol_T1[0] - Volume_T1_dead) * (Sols->HCl_N - pow(10, -(pH_H2_Samp_T1[Mix_Chosen_pH] + pH_offset[Mix_Chosen_pH]))) + Volume_Sample * (pow(10, -4.5) - pow(10, -(pH_H2_Samp_T1[Mix_Chosen_pH] + pH_offset[Mix_Chosen_pH])))) / (Sols->HCl_N - pow(10, -4.5))) + Volume_T1_dead;
 											PumpVol_T1[1] = Volume_Temp;
 											DEBUG_PRINT(UARTprintf("Step difference between the first and second mix still less than 25 steps, assuming %d calculated steps or %d nL is the endpoint!\n", (int) (Volume_Temp * Pump_Ratio * 1000 / PumpVolRev), (int) (Volume_Temp * 1000));)
 
@@ -10189,13 +10273,14 @@ int main(void) {
 						{
 							DEBUG_PRINT(UARTprintf("No pH sensors are in bounds, increasing T1 steps and trying again!\n");)
 
+							// Use the Henderson Haselbalch equation to estimate the amount of acid to pump to reach just past the endpoint
+							float HCl_Conc = Sols->HCl_N * ((PumpVol_T1[mixing_index] - Volume_T1_dead) / ((PumpVol_T1[mixing_index] - Volume_T1_dead) + Volume_Sample));
+							float A_Conc = (-1*(HCl_Conc * pow(10, pH_Cr_Samp_T1[T_Chosen_pH + mixing_index * 10] - 6.37) + HCl_Conc)) / ((pow(10, pH_Cr_Samp_T1[T_Chosen_pH + mixing_index * 10]- 6.37)/pow(10, pH_Cr_Samp_RS - 6.37)) - 1);
+							float Vol_Temp = ((Volume_Sample * A_Conc / Sols->HCl_N)/(1 - A_Conc / Sols->HCl_N)) + Volume_T1_dead + .050 * PumpVolRev / Pump_Ratio;	// Calculate the volume that will reach the endpoint, then add in the dead volume as well as 50 steps to go past the endpoint
+
 							// Check if this is the first mix or if we already have a valid point
 							if(mixing_index == 0)
 							{
-								float HCl_Conc = Sols->HCl_N * ((PumpVol_T1[0] - Volume_T1_dead) / ((PumpVol_T1[0] - Volume_T1_dead) + Volume_Sample));
-								float A_Conc = (-1*(HCl_Conc * pow(10, pH_Cr_Samp_T1[T_Chosen_pH] - 6.37) + HCl_Conc)) / ((pow(10, pH_Cr_Samp_T1[T_Chosen_pH]- 6.37)/pow(10, pH_Cr_Samp_RS - 6.37)) - 1);
-								float Vol_Temp = ((Volume_Sample * A_Conc / Sols->HCl_N)/(1 - A_Conc / Sols->HCl_N)) + Volume_T1_dead + .050 * PumpVolRev / Pump_Ratio;	// Calculate the volume that will reach the endpoint, then add in the dead volume as well as 50 steps to go past the endpoint
-
 								if(PumpVol_T1[0] >= .500 * PumpVolRev / Pump_Ratio)
 								{
 									DEBUG_PRINT(UARTprintf("Pumped max and didn't reach endpoint, calculating volume for endpoint\n");)
@@ -10222,18 +10307,35 @@ int main(void) {
 							}
 							else	// This is second mix, split the difference
 							{
-								PumpVol_T1[1] = (PumpVol_T1[0] + PumpVol_T1[1]) / 2;
-
 								if(PumpVol_T1[0] >= .500 * PumpVolRev / Pump_Ratio)
 								{
-									DEBUG_PRINT(UARTprintf("First pump was max and got the correct range, second mix didn't reach, calculate only off first mix\n");)
+									// If we pumped max on the first mix but didn't get in on the second mix check if there is room for mixing in between
+									// Originally put in place because we saw that for high alk samples it couldn't get a second mix in bounds
+									// 3/11/2024: Saw softened samples mix max on first mix, then cut back to min on second and not reach, then calculate based on first mix only
+									if(Vol_Temp > PumpVol_T1[1] && Vol_Temp < (PumpVol_T1[0] - .050 * PumpVolRev / Pump_Ratio))
+									{
+										PumpVol_T1[1] = Vol_Temp;
+									}
+									else
+									{
+										// First mix was in range, but second wasn't. Check if there is room between the two mixes to
+										DEBUG_PRINT(UARTprintf("First pump was max and got the correct range, second mix didn't reach, calculate only off first mix\n");)
 
-									for(i = 0; i < ISEs.pH_H2.size; i++)
-										Volume_T1_Endpoint[i + ISEs.pH_H2.index] = ((float) (PumpVol_T1[0] - Volume_T1_dead) * (Sols->HCl_N - pow(10, -pH_H2_Samp_T1[i])) + Volume_Sample * (pow(10, -4.5) - pow(10, -pH_H2_Samp_T1[i]))) / (Sols->HCl_N - pow(10, -4.5));
+										for(i = 0; i < ISEs.pH_H2.size; i++)
+											Volume_T1_Endpoint[i + ISEs.pH_H2.index] = ((float) (PumpVol_T1[0] - Volume_T1_dead) * (Sols->HCl_N - pow(10, -pH_H2_Samp_T1[i])) + Volume_Sample * (pow(10, -4.5) - pow(10, -pH_H2_Samp_T1[i]))) / (Sols->HCl_N - pow(10, -4.5));
 
-									for(i = 0; i < ISEs.pH_Cr.size; i++)
-										Volume_T1_Endpoint[i + ISEs.pH_Cr.index] = ((float) (PumpVol_T1[0] - Volume_T1_dead) * (Sols->HCl_N - pow(10, -pH_Cr_Samp_T1[i])) + Volume_Sample * (pow(10, -4.5) - pow(10, -pH_Cr_Samp_T1[i]))) / (Sols->HCl_N - pow(10, -4.5));
+										for(i = 0; i < ISEs.pH_Cr.size; i++)
+											Volume_T1_Endpoint[i + ISEs.pH_Cr.index] = ((float) (PumpVol_T1[0] - Volume_T1_dead) * (Sols->HCl_N - pow(10, -pH_Cr_Samp_T1[i])) + Volume_Sample * (pow(10, -4.5) - pow(10, -pH_Cr_Samp_T1[i]))) / (Sols->HCl_N - pow(10, -4.5));
+									}
 								}
+								else
+								{
+									if(Vol_Temp > PumpVol_T1[1] && Vol_Temp < (PumpVol_T1[0] - 50))
+										PumpVol_T1[1] = Vol_Temp;
+									else
+										PumpVol_T1[1] = (PumpVol_T1[0] + PumpVol_T1[1]) / 2;
+								}
+
 							}
 						}
 
@@ -10628,7 +10730,7 @@ int main(void) {
 							else	// Values are concentration
 								pNH4_Rinse = Calc_pNH4(Sols->NH4_EEP_Rinse, pH_TCor_Rinse, 0, T_RS, Sols->IS_RINSE);
 
-							// TODO: Enter potassium and sodium interference values
+							// TOD: Enter potassium and sodium interference values
 							float K_interference = 1.5; // ppm
 							float Na_interference = 15; // ppm
 
@@ -10665,10 +10767,16 @@ int main(void) {
 					//					userDelay(valve_delay, 1);
 				}	// End of if(MEASURE_ALKALINITY)
 
+#ifdef TESTING_MODE
+			uint64_t alk_clock = TimerValueGet64(WTIMER0_BASE);
+			DEBUG_PRINT(UARTprintf("Time to alk: %d\n", (uint32_t) ((alk_clock - samp_clock) / SysCtlClockGet()));)
+			DEBUG_PRINT(UARTprintf("Total time elapsed: %d s, or %d m %d s\n", (uint32_t) ((alk_clock - start_clock)/SysCtlClockGet()), (uint32_t) ((alk_clock - start_clock)/SysCtlClockGet())/60,(uint32_t) ((alk_clock - start_clock)/SysCtlClockGet())%60);)
+#endif
+
 			// Check if we need to mix T1 for NH4 measurement
 			if((gui32Error & ABORT_ERRORS) == 0)
 			{
-				if(MEASURE_NH4_T1 && pH_Cr_Samp_RS > 8.5 && ISEs.NH4.size > 0)
+				if(MEASURE_NH4_T1 && pH_Cr_Samp_RS > 8 && ISEs.NH4.size > 0)
 				{
 					float ISE_E_Samp_T1[10] = {0,0,0,0,0,0,0,0,0,0};
 					//					float *pH_H2_E_Samp_T1 = &ISE_E_Samp_T1[ISEs.pH_H2.index];
@@ -10677,49 +10785,31 @@ int main(void) {
 
 					if(Volume_T1_End == 0)	// If the endpoint wasn't found or alkalinity wasn't tested just guess... TODO: Base this off hardness
 					{
-						Volume_T1_End = .075 * PumpVolRev / Pump_Ratio;
+						if(ISEs.Config >= DISINFECTION_CART && ISEs.Config <= DISINFECTION_CART_2CR_6NH4_2CR)	// This is a disinfection cartridge
+						{
+							// Trying HEPES buffer on T1 port, Simon wants 7.5 uL, doubled because that is cut in half
+							Volume_T1_End = 15;
+						}
+						else	// Not a disinfection cartridge (full cartridge most likely)
+						{
+//							Volume_T1_End = .075 * PumpVolRev / Pump_Ratio;
+
+							// Because Ca_Hardness is almost 1-1 with alkalinity use the Ca_Hardness value to calculate the Volume T1 Endpoint
+							Volume_T1_End = (Ca_Hardness[T_Chosen_Ca] * (((Steps_PreT1/1000) * PumpVolRev) + PumpVol_PostT1)) / (50044.0 * Sols->HCl_N);
+						}
 					}
 
 					DEBUG_PRINT(UARTprintf("Cutting endpoint steps to 50%% to test NH4...\n");)
 					Volume_T1_End *= .5;
 
-					//
-					// Alkalinity, T1 Mixing
-					//
-					if((gui32Error & ABORT_ERRORS) == 0)	// Prime everytime before long sample pull because we are pushing bubble back in when puming mixed plug
-					{
-						// Prime a little T1 before test to clear out any contamination
-						DEBUG_PRINT(UARTprintf("Priming T1... \n");)
-						RunValveToPossition_Bidirectional_AbortReady(V_T1, VALVE_STEPS_PER_POSITION);
-						PumpVolume(FW, PumpVol_tube_prime_buffers, Speed_Metering, 1);
-#ifdef PRIME_BUFFERS_TEST
-						if(MEASURE_ALKALINITY == 0)	// Only do an extra large prime if Alkalinity cycle wasn't ran
-						{
-							// In order to test if a big prime hurts things set biggest prime for testing purposes
-							DEBUG_PRINT(UARTprintf("Adding Max Prime... \n");)
-							PumpVolume(FW, 200, Speed_Metering, 1);
-						}
-#endif
-						userDelay(valve_delay, 1);
-					}
-
-					RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
-					PumpVolume(FW, PumpVol_sample_rinse, Speed_Fast, 1);
-					userDelay(valve_delay, 1);
-					RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);
-					PumpVolume(FW, PumpVol_air_bubble, Speed_Fast, 1);
-
-					//						DEBUG_PRINT(UARTprintf("Cutting endpoint steps to 50%% to test NH4...\n");)
-					//						Steps_T1_Endpoint[T_Chosen_Alk] *= .5;
-
 					if(Volume_T1_End < .050 * PumpVolRev / Pump_Ratio)
 					{
-						DEBUG_PRINT(UARTprintf("Settings steps to 50, steps T1 set to:\t%d\n", (int) Volume_T1_End * 1000.0 * Pump_Ratio / PumpVolRev);)
+						DEBUG_PRINT(UARTprintf("Settings steps to 50, steps T1 set to:\t%d\n", (int) (Volume_T1_End * 1000.0 * Pump_Ratio / PumpVolRev));)
 						Volume_T1_End = .050 * PumpVolRev / Pump_Ratio;
 					}
 					else if(Volume_T1_End > .50 * PumpVolRev / Pump_Ratio)
 					{
-						DEBUG_PRINT(UARTprintf("Settings steps to 500, steps T1 set to: %d\n", (int) Volume_T1_End * 1000.0 * Pump_Ratio / PumpVolRev);)
+						DEBUG_PRINT(UARTprintf("Settings steps to 500, steps T1 set to: %d\n", (int) (Volume_T1_End * 1000.0 * Pump_Ratio / PumpVolRev));)
 						Volume_T1_End = .50 * PumpVolRev / Pump_Ratio;
 					}
 					else
@@ -10727,49 +10817,105 @@ int main(void) {
 						DEBUG_PRINT(UARTprintf("Mixing %d steps, %d nL of T1, goal is to be 6.3-8 after mix... \n", (int) ((Volume_T1_End * 1000.0 * Pump_Ratio) / PumpVolRev), (int) (Volume_T1_End * 1000.0));)
 					}
 
+					//
+					// T1 Mixing
+					//
+					uint8_t T1_cond_check = 1;
+					uint8_t T1_priming_index = 0;
+
+					while(((gui32Error & ABORT_ERRORS) == 0) && T1_cond_check > 0 && T1_priming_index < 3)
+					{
+						if(T1_priming_index > 0)	// If the check failed on the first go separate the first plug from the next ones with an air bubble
+						{
+							RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);
+							PumpVolume(FW, PumpVol_air_bubble, Speed_Fast, 1);
+							userDelay(valve_delay_after_air, 1);
+						}
+
+						// Prime a little T1 before test to clear out any contamination
+						DEBUG_PRINT(UARTprintf("Priming T1... \n");)
+						RunValveToPossition_Bidirectional_AbortReady(V_T1, VALVE_STEPS_PER_POSITION);
+						PumpVolume(FW, PumpVol_tube_prime_buffers, Speed_Metering, 1);
+#ifdef PRIME_BUFFERS_TEST
+						if(T1_priming_index == 0 && ui8Times_mixed == 0)	// Only do an extra large prime on the very first priming
+						{
+							// In order to test if a big prime hurts things set biggest prime for testing purposes
+							DEBUG_PRINT(UARTprintf("Adding Max Prime... \n");)
+							PumpVolume(FW, 200, Speed_Metering, 1);
+						}
+#endif
+						userDelay(valve_delay, 1);
+
+						RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
+//							PumpVolume(FW, PumpVol_plug + PumpVol_Solution + PumpVol_Rinse - PumpVol_tube_prime_buffers, Speed_Fast, 1);
+
+						// Spliting the pumping so the plug is moving slowly when going over ISEs
+						PumpVolume(FW, PumpVol_plug - PumpVol_tube_prime_buffers, Speed_Fast, 1);
+						PumpVolume(FW, PumpVol_Solution + PumpVol_Rinse, Speed_Metering, 1);
+
+//						T_Samp_T1[mixing_index] = MeasureTemperature(1);
+
+						float Conductivity_T1;// = MeasureConductivity(Sols->Cond_EEP_Rinse, Sols->Cond_EEP_Cal_2, 0);
+
+#ifndef COND_SOLUTION_STRUCT
+						if(Sols->pH_EEP_Cal_2 < 9) // This is Cal 3, not Cal 2
+						{
+							if(Sols->Cond_EEP_Clean == Sols->Cond_EEP_Clean)
+								Conductivity_T1 = MeasureConductivity(Sols->Cond_EEP_Clean, Sols->Cond_EEP_Cal_1, 0);
+							else
+								Conductivity_T1 = MeasureConductivity(Sols->Cond_EEP_Rinse, Sols->Cond_EEP_Cal_1, 0);
+						}
+						else
+						{
+							if(Sols->Cond_EEP_Clean == Sols->Cond_EEP_Clean)
+								Conductivity_T1 = MeasureConductivity(Sols->Cond_EEP_Clean, Sols->Cond_EEP_Cal_2, 0);
+							else
+								Conductivity_T1 = MeasureConductivity(Sols->Cond_EEP_Rinse, Sols->Cond_EEP_Cal_2, 0);
+						}
+#else
+						Conductivity_T1 = MeasureConductivity(Sols, 0);
+#endif
+
+						Conductivity_T1 = (Conductivity_T1 / (1 + COND_TCOMP_SAMP*(T_Samp - 25)));
+
+						DEBUG_PRINT(UARTprintf("Temp corrected cond Samp + T1: %d uS/cm * 1000\n", (int) ((Conductivity_T1) * 1000));)
+
+						T1_priming_index++;
+
+						if(Conductivity_T1 > 150 + Conductivity)
+						{
+							T1_cond_check = 0;
+						}
+						else
+						{
+							gui32Error |= T1_PRIME_COND_ERROR; // Update error
+							update_Error();
+						}
+					}
+
+					PumpVolume(FW, PumpVol_sample_rinse - (PumpVol_plug + PumpVol_Solution + PumpVol_Rinse), Speed_Fast, 1);
+					FindPossitionZeroPump();
+					userDelay(valve_delay, 1);
+					RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);
+					PumpStepperRunStepSpeed_AbortReady(FW, 2000, Speed_Fast);	// Going to leave this as steps to keep volume of air to a miniumum before metering T1
+
+					T1_cond_check = 1;
+
+					// T1 Mixing
+					if(ALK_MIX_IN_AIR)
+					{
+						RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Move valve to air
+						DEBUG_PRINT(UARTprintf("Pumping large air plug so arrays and reference are uncovered during mixing\n");)
+						PumpStepperRunStepSpeed_AbortReady(FW, 7000 + 1000, Speed_Fast);
+					}
+					userDelay(valve_delay_after_air, 1);
+
+					//						DEBUG_PRINT(UARTprintf("Cutting endpoint steps to 50%% to test NH4...\n");)
+					//						Steps_T1_Endpoint[T_Chosen_Alk] *= .5;
+
 					RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Move valve to air
 					FindPossitionZeroPump();
 					userDelay(valve_delay_after_air, 1);
-
-#ifdef ALK_MIX_TWO_PLUGS
-					// Pump buffer and solution
-					if(ALK_MIX_TWO_PLUGS)
-					{
-						RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);		// Move valve to sample
-						PumpStepperRunStepSpeed_AbortReady(FW, Steps_PreT1, Speed_Metering);
-						userDelay(valve_delay_metering, 1);
-//						if(Steps_T1_End <= 600)
-//						{
-							RunValveToPossition_Bidirectional_AbortReady(V_T1, VALVE_STEPS_PER_POSITION);		// Move valve to buffer 1
-							PumpVolume(FW, Volume_T1_End, Speed_Metering, 1);
-							userDelay(valve_delay_metering, 1);
-//						}
-//						else
-//						{
-//							uint16_t Steps_to_go = Steps_T1_End;
-//							while(Steps_to_go > 600)
-//							{
-//								Steps_to_go -= 600;
-//								RunValveToPossition_Bidirectional_AbortReady(V_T1, VALVE_STEPS_PER_POSITION);		// Move valve to buffer 1
-//								PumpStepperRunStepSpeed_AbortReady(FW, 600, Speed_Metering);
-//								userDelay(valve_delay_metering, 1);
-//								RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);		// Move valve to sample
-//								PumpStepperRunStepSpeed_AbortReady(FW, 400, Speed_Metering);
-//								userDelay(valve_delay_metering, 1);
-//							}
-//							RunValveToPossition_Bidirectional_AbortReady(V_T1, VALVE_STEPS_PER_POSITION);		// Move valve to buffer 1
-//							PumpStepperRunStepSpeed_AbortReady(FW, Steps_to_go, Speed_Metering);
-//							userDelay(valve_delay_metering, 1);
-//						}
-
-						RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);		// Move valve to sample
-						PumpVolume(FW, PumpVol_PostT1, Speed_Metering, 1);
-						userDelay(valve_delay_metering, 1);
-						RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Move valve to air
-						PumpVolume(FW, (2 * PumpVolRev + (PumpVolRev - Volume_T1_End)), Speed_Fast, 1);	// Air bubble size set to return pump to zero position
-						userDelay(valve_delay_after_air, 1);
-					}
-#endif
 
 					// Pump buffer and solution
 					RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);		// Move valve to sample
@@ -10852,7 +10998,9 @@ int main(void) {
 					}
 
 					for(i = 0; i < ISEs.NH4.size; i++)
+					{
 						ISE_E_Samp[ISEs.NH4.index + i] = ISE_E_Samp_T1[ISEs.NH4.index + i];
+					}
 
 					//								// pH Measurement
 					for(i = 0; i < ISEs.pH_Cr.size; i++)
@@ -10908,8 +11056,8 @@ int main(void) {
 					}
 
 					DEBUG_PRINT(UARTprintf("pH Cr:\t=%d/1000\t=%d/1000\n", (int) (pH_Samp_T1[ISEs.pH_Cr.index] * 1000), (int) (pH_Samp_T1[ISEs.pH_Cr.index + 1] * 1000));)
+					DEBUG_PRINT(UARTprintf("Chose Cr %d with a pH of %d/1000\n", T_Chosen_pH_T1, (int) (pH_Samp_T1[T_Chosen_pH_T1 + ISEs.pH_Cr.index] * 1000));)
 					DEBUG_PRINT(UARTprintf("NH4 of mixed T1:\t=%d/1000\t=%d/1000\n\n", (int) (NH4_NH3_N_Free[0] * 1000), (int) (NH4_NH3_N_Free[1] * 1000));)
-
 
 #ifndef UNIVERSAL_PICKING_FUNCTION
 					T_Chosen_NH4 = Choose_NH4_Sensor(Cal_Number, NH4_NH3_N_Free, NH4_E_Rinse, ISEs, Sols);
@@ -10930,10 +11078,46 @@ int main(void) {
 					if(Cond_Cal_Status && ISE_Cal_Status[ISEs.NH4.index + T_Chosen_NH4] && ISE_Cal_Status[ISEs.pH_Cr.index + T_Chosen_pH] && ISEs.NH4.size > 0)
 						MemoryWrite(Test_page, OFFSET_TEST_FREE_NH4, 4, (uint8_t *) &NH4_Ammonium);
 
+					for(i = 0; i < 10; i++)
+						MemoryWrite(Test_page, OFFSET_RAW_ISE_1_SAMP + (i * 4), 4, (uint8_t *) &ISE_E_Samp[i]);
+
+					MemoryWrite(Test_page, OFFSET_NH4_T1_MIX_PH, 4, (uint8_t *) &pH_Samp_T1[T_Chosen_pH_T1 + ISEs.pH_Cr.index]);
+					MemoryWrite(Test_page, OFFSET_NH4_T1_MIX_VOL, 4, (uint8_t *) &Volume_T1_End);
+					MemoryWrite(Test_page, OFFSET_NH4_T1_MIX_COND, 4, (uint8_t *) &Conductivity_T1);
+
 					update_Test(Test_Number);
+
+					// For disinfection cartridge flush with sample to clear our HEPES
+					if(ISEs.Config >= DISINFECTION_CART && ISEs.Config <= DISINFECTION_CART_2CR_6NH4_2CR)	// This is a disinfection cartridge
+					{
+						DEBUG_PRINT(UARTprintf("Rinsing with sample and air bubbles\n");)
+
+						for (i = 0; i < 3; i++) // Loop over air/solution cycle 3 times for single solution
+						{
+							RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
+							PumpVolume(FW, PumpVol_Solution, Speed_Fast, 1);
+							if(i != (Number_of_bubbles_samp - 1))
+								userDelay(valve_delay, 1);
+							RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
+							PumpVolume(FW, PumpVol_air_bubble, Speed_Fast, 1);
+							userDelay(valve_delay_after_air, 1);
+						}
+						RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
+						PumpVolume(FW, PumpVol_sample_rinse, Speed_Fast, 1);
+						userDelay(valve_delay, 1);
+						RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);
+						PumpVolume(FW, PumpVol_air_bubble, Speed_Fast, 1);
+						userDelay(valve_delay_after_air, 1);
+					}
 				}
 			}
 #endif	// STRAIGHT_TO_CL
+
+#ifdef TESTING_MODE
+			uint64_t NH4_mix_clock = TimerValueGet64(WTIMER0_BASE);
+			DEBUG_PRINT(UARTprintf("Time to NH4 mix: %d\n", (uint32_t) ((NH4_mix_clock - alk_clock) / SysCtlClockGet()));)
+			DEBUG_PRINT(UARTprintf("Total time elapsed: %d s, or %d m %d s\n", (uint32_t) ((NH4_mix_clock - start_clock)/SysCtlClockGet()), (uint32_t) ((NH4_mix_clock - start_clock)/SysCtlClockGet())/60,(uint32_t) ((NH4_mix_clock - start_clock)/SysCtlClockGet())%60);)
+#endif
 
 			//
 			// Clean amperometrics in rinse
@@ -11625,6 +11809,12 @@ int main(void) {
 					}
 				}
 
+#ifdef TESTING_MODE
+			uint64_t clean_clock = TimerValueGet64(WTIMER0_BASE);
+			DEBUG_PRINT(UARTprintf("Time to clean: %d\n", (uint32_t) ((clean_clock - NH4_mix_clock) / SysCtlClockGet()));)
+			DEBUG_PRINT(UARTprintf("Total time elapsed: %d s, or %d m %d s\n", (uint32_t) ((clean_clock - start_clock)/SysCtlClockGet()), (uint32_t) ((clean_clock - start_clock)/SysCtlClockGet())/60,(uint32_t) ((clean_clock - start_clock)/SysCtlClockGet())%60);)
+#endif
+
 			// Create variables for Cl mixing
 			float Cl_nA_FCl = 0;
 			float Cl_nA_TCl = 0;
@@ -12110,6 +12300,11 @@ int main(void) {
 
 				}
 
+#ifdef TESTING_MODE
+			uint64_t free_clock = TimerValueGet64(WTIMER0_BASE);
+			DEBUG_PRINT(UARTprintf("Time to free: %d\n", (uint32_t) ((free_clock - clean_clock) / SysCtlClockGet()));)
+			DEBUG_PRINT(UARTprintf("Total time elapsed: %d s, or %d m %d s\n", (uint32_t) ((free_clock - start_clock)/SysCtlClockGet()), (uint32_t) ((free_clock - start_clock)/SysCtlClockGet())/60,(uint32_t) ((free_clock - start_clock)/SysCtlClockGet())%60);)
+#endif
 
 			//
 			// TCL, B2
@@ -12639,6 +12834,13 @@ int main(void) {
 					userDelay(valve_delay, 1);
 				}
 
+#ifdef TESTING_MODE
+			uint64_t total_clock = TimerValueGet64(WTIMER0_BASE);
+			DEBUG_PRINT(UARTprintf("Time to total: %d\n", (uint32_t) ((total_clock - free_clock) / SysCtlClockGet()));)
+			DEBUG_PRINT(UARTprintf("Total time elapsed: %d s, or %d m %d s\n", (uint32_t) ((total_clock - start_clock)/SysCtlClockGet()), (uint32_t) ((total_clock - start_clock)/SysCtlClockGet())/60,(uint32_t) ((total_clock - start_clock)/SysCtlClockGet())%60);)
+#endif
+
+
 #ifdef MEASURE_NITRITE
 			// Create variables for Nitrite
 			float Nitrite_Samp_nA = 0;
@@ -13116,12 +13318,17 @@ int main(void) {
 			}
 
 			uint8_t Storage_Port;
+#ifdef STORE_HIGH_CONC_CAL
+			DEBUG_PRINT(UARTprintf("Pumping Cal 5 as Postrinse\n");)
+			Storage_Port = V_CAL_2;
+#else
 			/*if(ISEs.Config == PH_CL_CART && Sols->Cond_EEP_Cal_2 > 900)	// pH only cartridge with pH 9 clean in place of Cal 2
 				Storage_Port = V_CAL_2;
 			else */if((STORE_IN_CLEAN == 0 || (ISEs.Config == PH_CL_CART && STORE_PH6_CLEAN == 0)) && Sols->pH_EEP_Clean < 8.5)
 				Storage_Port = V_RINSE;
 			else
 				Storage_Port = V_CLEAN;
+#endif
 
 			if(PURGE_SAMPLE)
 			{
@@ -13181,6 +13388,12 @@ int main(void) {
 					userDelay(valve_delay, 0);
 				}
 			}
+
+#ifdef TESTING_MODE
+			uint64_t flush_clock = TimerValueGet64(WTIMER0_BASE);
+			DEBUG_PRINT(UARTprintf("Time to flush: %d\n", (uint32_t) ((flush_clock - total_clock) / SysCtlClockGet()));)
+			DEBUG_PRINT(UARTprintf("Total time elapsed: %d s, or %d m %d s\n", (uint32_t) ((flush_clock - start_clock)/SysCtlClockGet()), (uint32_t) ((flush_clock - start_clock)/SysCtlClockGet())/60,(uint32_t) ((flush_clock - start_clock)/SysCtlClockGet())%60);)
+#endif
 
 			//
 			// Flow Chart teal section, post-rinse
@@ -13630,6 +13843,12 @@ int main(void) {
 
 			SleepValve();
 
+#ifdef TESTING_MODE
+			uint64_t store_clock = TimerValueGet64(WTIMER0_BASE);
+			DEBUG_PRINT(UARTprintf("Time to flush: %d\n", (uint32_t) ((store_clock - flush_clock) / SysCtlClockGet()));)
+			DEBUG_PRINT(UARTprintf("Total time elapsed: %d s, or %d m %d s\n", (uint32_t) ((store_clock - start_clock)/SysCtlClockGet()), (uint32_t) ((store_clock - start_clock)/SysCtlClockGet())/60,(uint32_t) ((store_clock - start_clock)/SysCtlClockGet())%60);)
+#endif
+
 			if((gui32Error & ABORT_ERRORS) == 0)
 			{
 				// Track number of tests each sensor has performed in Sensor Usage characteristic
@@ -13885,6 +14104,245 @@ int main(void) {
 
 			PrintTime();
 
+#ifdef TESTING_MODE
+
+			// TODO: Work out the QC stuff
+			// Set the standard methods based on the QC solution
+			uint8_t qc_passed = 1;
+			if(g_QCSolution >= 1 && g_QCSolution <= 5)
+			{
+				float pH_SM, Ca_SM, TH_SM, NH4_SM, FCl_SM, TCl_SM, Alk_SM, Cond_SM;
+
+				if(g_QCSolution == 1)
+				{
+					pH_SM = 6.49;
+					Ca_SM = 1000;
+					TH_SM = 1400;
+					NH4_SM = 5;
+					FCl_SM = 0;
+					TCl_SM = 0;
+					Alk_SM = 44;
+					Cond_SM = 3230;
+				}
+				else if(g_QCSolution == 2)
+				{
+					pH_SM = 7;
+					Ca_SM = 500;
+					TH_SM = 800;
+					NH4_SM = 0;
+					FCl_SM = 0.5;
+					TCl_SM = 0.5;
+					Alk_SM = 300;
+					Cond_SM = 2410;
+				}
+				else if(g_QCSolution == 3)
+				{
+					pH_SM = 7.5;
+					Ca_SM = 150;
+					TH_SM = 180;
+					NH4_SM = 0;
+					FCl_SM = 5;
+					TCl_SM = 5;
+					Alk_SM = 100;
+					Cond_SM = 941;
+				}
+				else if(g_QCSolution == 4)
+				{
+					pH_SM = 8.27;
+					Ca_SM = 20;
+					TH_SM = 40;
+					NH4_SM = 0.1;
+					FCl_SM = 0;
+					TCl_SM = 2;
+					Alk_SM = 20;
+					Cond_SM = 666;
+				}
+				else if(g_QCSolution == 5)
+				{
+					pH_SM = 9.49;
+					Ca_SM = 10;
+					TH_SM = 25;
+					NH4_SM = 0;
+					FCl_SM = 0.2;
+					TCl_SM = 0.2;
+					Alk_SM = 200;
+					Cond_SM = 345;
+				}
+
+				DEBUG_PRINT(UARTprintf("\n");)
+
+				for(i = 0; i < ISEs.pH_Cr.size; i++)
+				{
+					float pH_Cr_Samp_25 = Calc_pH_TCor(pH_Cr_Samp[i], 25, T_Therm, K_T_pH_Samp_Sq, K_T_pH_Samp_Ln);
+					if(abs_val(pH_Cr_Samp_25 - pH_SM) > 0.1)
+					{
+						qc_passed = 0;
+						DEBUG_PRINT(UARTprintf("pH spot %d out of bounds! Expected: %d, Measured: %d\n", i + 1, (int) (pH_SM * 1000), (int) (pH_Cr_Samp_25 * 1000));)
+					}
+				}
+				for(i = 0; i < ISEs.TH.size; i++)
+				{
+					float TH_Bound = TH_SM * .1;
+					if(TH_Bound < 10)
+					{
+						TH_Bound = 10;
+					}
+
+					if(abs_val(TH_corr[i] - TH_SM) > TH_Bound)
+					{
+						qc_passed = 0;
+						DEBUG_PRINT(UARTprintf("TH spot %d out of bounds! Expected: %d, Measured: %d\n", i + 1, (int) (TH_SM * 1000), (int) (TH_corr[i] * 1000));)
+					}
+				}
+				for(i = 0; i < ISEs.NH4.size; i++)
+				{
+					float NH4_Bound = NH4_SM * .1;
+					if(NH4_Bound < .1)
+					{
+						NH4_Bound = .1;
+					}
+
+					if(abs_val(NH4_NH3_N_Free[i] - NH4_SM) > NH4_Bound)
+					{
+						qc_passed = 0;
+						DEBUG_PRINT(UARTprintf("NH4 spot %d out of bounds! Expected: %d, Measured: %d\n", i + 1, (int) (NH4_SM * 1000), (int) (NH4_NH3_N_Free[i] * 1000));)
+					}
+				}
+				for(i = 0; i < ISEs.Ca.size; i++)
+				{
+					float Ca_Bound = Ca_SM * .1;
+					if(Ca_Bound < 10)
+					{
+						Ca_Bound = 10;
+					}
+
+					if(abs_val(Ca_Hardness[i] - Ca_SM) > Ca_Bound)
+					{
+						qc_passed = 0;
+						DEBUG_PRINT(UARTprintf("Ca spot %d out of bounds! Expected: %d, Measured: %d\n", i + 1, (int) (Ca_SM * 1000), (int) (Ca_Hardness[i] * 1000));)
+					}
+				}
+
+				if(MEASURE_ALKALINITY)
+				{
+					if(Alk_Samp[T_Chosen_Alk] != Alk_Samp[T_Chosen_Alk])
+					{
+						qc_passed = 0;
+						DEBUG_PRINT(UARTprintf("Alk mixing failed!\n");)
+					}
+					else
+					{
+						float Alk_Bound = Alk_SM * .1;
+						if(Alk_Bound < 10)
+						{
+							Alk_Bound = 10;
+						}
+
+						for(i = 0; i < ISEs.pH_H2.size; i++)
+						{
+							if(abs_val(Alk_Samp[i] - Alk_SM) > Alk_Bound)
+							{
+								qc_passed = 0;
+								DEBUG_PRINT(UARTprintf("Alk spot %d out of bounds! Expected: %d, Measured: %d\n", i + 1, (int) (Alk_SM * 1000), (int) (Alk_Samp[i] * 1000));)
+							}
+						}
+					}
+				}
+
+				float Cond_Bound = Cond_SM * .1;
+				if(Cond_Bound < 20)
+				{
+					Cond_Bound = 20;
+				}
+
+				if(abs_val(Conductivity - Cond_SM) > Cond_Bound)
+				{
+					qc_passed = 0;
+					DEBUG_PRINT(UARTprintf("Conductivity out of bounds! Expected: %d, Measured: %d\n", (int) (Cond_SM * 1000), (int) (Conductivity * 1000));)
+				}
+
+				if(gui32Error & CL_CLEANING_OUT_OF_RANGE != 0)
+				{
+					qc_passed = 0;
+					DEBUG_PRINT(UARTprintf("Cl Cleaning failed preventing FCl and TCl from running!\n");)
+				}
+				else
+				{
+					if(MEASURE_FCL)
+					{
+						if(Cl_FCl_ppm != Cl_FCl_ppm)
+						{
+							qc_passed = 0;
+							DEBUG_PRINT(UARTprintf("FCl mixing failed!\n");)
+						}
+						else
+						{
+							float FCl_Bound = FCl_SM * .1;
+							if(FCl_Bound < .1)
+							{
+								FCl_Bound = .1;
+							}
+
+							if(abs_val(Cl_FCl_ppm - FCl_SM) > FCl_Bound)
+							{
+								qc_passed = 0;
+								DEBUG_PRINT(UARTprintf("FCl out of bounds! Expected: %d, Measured: %d\n", (int) (FCl_SM * 1000), (int) (Cl_FCl_ppm * 1000));)
+							}
+						}
+					}
+
+					if(MEASURE_TCL)
+					{
+						if(Cl_TCl_ppm != Cl_TCl_ppm)
+						{
+							qc_passed = 0;
+							DEBUG_PRINT(UARTprintf("TCl mixing failed!\n");)
+						}
+						else
+						{
+							float TCl_Bound = TCl_SM * .1;
+							if(TCl_Bound < .1)
+							{
+								TCl_Bound = .1;
+							}
+
+							if(abs_val(Cl_TCl_ppm - TCl_SM) > TCl_Bound)
+							{
+								qc_passed = 0;
+								DEBUG_PRINT(UARTprintf("TCl out of bounds! Expected: %d, Measured: %d\n", (int) (TCl_SM * 1000), (int) (Cl_TCl_ppm * 1000));)
+							}
+						}
+					}
+				}
+
+
+				SetLED(GREEN_BUTTON_BLINK, 0);
+				if((gui32Error & FAILED_TEST) != 0 || qc_passed == 0)
+				{
+					SetLED(RED_BUTTON | RED_BUTTON_V, 1);
+				}
+				else
+				{
+					SetLED(GREEN_BUTTON | GREEN_BUTTON_V, 1);
+					DEBUG_PRINT(UARTprintf("QC PASSED\n\n");)
+				}
+			}
+			else
+			{
+				SetLED(GREEN_BUTTON_BLINK, 0);
+				if((gui32Error & FAILED_TEST) == 0 || DEMO_UNIT == 1)
+				{
+					SetLED(GREEN_BUTTON | GREEN_BUTTON_V, 1);
+				}
+				else
+				{
+					SetLED(RED_BUTTON | RED_BUTTON_V, 1);
+				}
+			}
+
+			g_QCSolution = 0;
+
+#else
 			SetLED(GREEN_BUTTON_BLINK, 0);
 			if((gui32Error & FAILED_TEST) == 0 || DEMO_UNIT == 1)
 			{
@@ -13894,6 +14352,17 @@ int main(void) {
 			{
 				SetLED(RED_BUTTON | RED_BUTTON_V, 1);
 			}
+#endif
+
+#ifdef TESTING_MODE
+			uint64_t valve_clock = TimerValueGet64(WTIMER0_BASE);
+			DEBUG_PRINT(UARTprintf("Time to valve: %d\n", (uint32_t) ((valve_clock - store_clock) / SysCtlClockGet()));)
+			DEBUG_PRINT(UARTprintf("Total time elapsed: %d s, or %d m %d s\n", (uint32_t) ((valve_clock - start_clock)/SysCtlClockGet()), (uint32_t) ((valve_clock - start_clock)/SysCtlClockGet())/60,(uint32_t) ((valve_clock - start_clock)/SysCtlClockGet())%60);)
+
+			TimerDisable(WTIMER0_BASE, TIMER_A);
+			TimerConfigure(WTIMER0_BASE, TIMER_CFG_ONE_SHOT);
+			TimerIntEnable(WTIMER0_BASE, TIMER_TIMA_TIMEOUT);
+#endif
 
 			counter = 0;
 			while(GPIOPinRead(IO_BUTTON_BASE, IO_BUTTON_PIN) == IO_BUTTON_PIN && counter < TIMEOUT)
@@ -13928,6 +14397,7 @@ int main(void) {
 				update_Status(STATUS_TEST, OPERATION_TEST_FAILED);
 				DEBUG_PRINT(UARTprintf("Test failed! Error Code: 0x%x\n", gui32Error);)
 			}
+
 			//			update_Status(STATUS_TEST, OPERATION_TEST_COMPLETE);
 			while(GPIOPinRead(IO_BUTTON_BASE, IO_BUTTON_PIN) == 0x00);
 

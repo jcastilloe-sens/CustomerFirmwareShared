@@ -277,7 +277,13 @@ void InitIO_Ext(void)
 	uint16_t IO1_Setup = 0x0000;
 	uint16_t IO2_Setup;
 	if(gABoard >= AV6_6)
+	{
+#ifdef CARTRIDGE_VERSION
+		IO2_Setup = 0x0000;	// On the heavy metals cartridge prototype all the pins are used as outputs
+#else
 		IO2_Setup = 0x0040;
+#endif
+	}
 	else if(gABoard >= AV6_2)
 	{
 		IO2_Setup = 0x00E0;

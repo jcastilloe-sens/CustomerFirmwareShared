@@ -47,7 +47,7 @@ extern struct ValvePort ValveSetup;
 #define V_T1		ValveSetup.T1
 #define V_RINSE		ValveSetup.Rinse
 
-#define V_STORE		V_AIR	// Define the position to store the valve between uses
+#define V_STORE		V_SAMP	// Define the position to store the valve between uses
 
 #else
 //extern float gPump_Ratio;
