@@ -15563,7 +15563,7 @@ int main(void) {
 							update_Status(STATUS_TEST, OPERATION_SAMPLE_B1);
 
 							uint8_t mixing_index = 0;
-							uint8_t in_range = 0;	// Set once pH mixing gets into correct range
+//							uint8_t in_range = 0;	// Set once pH mixing gets into correct range
 
 							if((gui32Error & 0) == 0)
 							{
@@ -15687,7 +15687,7 @@ int main(void) {
 							update_Status(STATUS_TEST, OPERATION_SAMPLE_B2);
 
 							uint8_t mixing_index = 0;
-							uint8_t in_range = 0;	// Set once pH mixing gets into correct range
+//							uint8_t in_range = 0;	// Set once pH mixing gets into correct range
 
 							// Prime B2 at beginning only once, don't push back until after done mixing
 							if((gui32Error & 0) == 0)
