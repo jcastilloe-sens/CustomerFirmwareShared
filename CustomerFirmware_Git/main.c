@@ -1467,6 +1467,19 @@ int main(void) {
 						}
 					}
 
+					if(Command == '0')
+					{
+						uint8_t Device_Serial[8];
+						EEPROMRead((uint32_t *) Device_Serial, OFFSET_SERIAL_NUMBER, 8);
+
+						UARTprintf("\n");
+						uint8_t i;
+						for(i = 0; i < 7; i++)
+							UARTCharPutNonBlocking(UART0_BASE, Device_Serial[i]); // Respond with Serial Number
+						UARTprintf("\n");
+
+					} 	// Ping SN command
+
 					if(Command == '1')
 					{
 						if(POWER_ANALOG_OFF && gBoard >= V6_4 && STORE_AT_POTENTIAL == 0)
