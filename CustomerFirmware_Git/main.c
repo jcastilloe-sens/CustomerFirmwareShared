@@ -14795,7 +14795,7 @@ int main(void) {
 			if((gui32Error & 0) != 0)
 				break;
 
-			float Therm_corr;
+			float Therm_corr = nanf("");
 			float Cond_Slope;
 			if(CALIBRATE_CONDUCTIVITY || CALIBRATE_THERM)
 			{
@@ -14811,6 +14811,8 @@ int main(void) {
 				while(GPIOPinRead(GPIO_PORTF_BASE, GPIO_PIN_3) == 0);
 				SetLED(BLUE_BUTTON_BLINK, 0);
 
+				float T_Therm_QC = ReadThermistor(THERM_QC);	// Read the temperature for a thermsitor mounted in the vial
+
 				float T_Therm_S = ReadThermistor(THERM_SAMP);
 
 				UARTprintf("Priming sample tube... \n");
@@ -14820,17 +14822,37 @@ int main(void) {
 
 				float T_Therm_F = ReadThermistor(THERM_SAMP);
 				UARTprintf("Therm Start and Final Temps:\t%d\t%d\tC*1000\n", (int) (T_Therm_S * 1000), (int) (T_Therm_F * 1000));
+				UARTprintf("Measured vial temperature: %d/1000 C\n", (int) (T_Therm_QC * 1000));
 
 				if(CALIBRATE_THERM)
 				{
-					UARTprintf("Type in measured vial temperature in the format: '##.##'\n");
+					if(gui32Error != THERMISTOR_FAILED)
+					{
+						Therm_corr = (T_Therm_F - T_Therm_S) / (T_Therm_S - T_Therm_QC);
+						UARTprintf("Calculated from QC Thermistor: %d/1000\n", (int) (Therm_corr * 1000));
+//						if(Therm_corr >= -1 && Therm_corr <= -0.5)
+//						{
+//							UARTprintf("Thermistor correction seems realistic, saving to cartridge memory!\n");
+//							MemoryWrite(PAGE_FACTORY_CAL, OFFSET_THERM_CORRECTION, 4, (uint8_t *) &Therm_corr);
+//						}
+//						else
+//						{
+//							UARTprintf("Thermistor correction outside of expected range, not saving to memory!\n");
+//							FactoryCalCheck = 0;
+//							ThermCheck = 0;
+//						}
+					}
+
+					if(Therm_corr == Therm_corr)
+						UARTprintf("To keep the above correction type Y\nOR ");
+					UARTprintf("Type in measured vial temperature in the format: '##.#'\n");
 
 					BuzzerSound(400);
 					SetLED(BLUE_BUTTON_BLINK, 1);
 
 					int32_t UART_Rx[4] = {0,0,0,0};
 					uint8_t check = 0;
-					while(check != 1)
+					while(check == 0)
 					{
 						// Clear UART FIFO
 						while(UARTCharsAvail(UART0_BASE))
@@ -14844,13 +14866,19 @@ int main(void) {
 
 							if(UART_Rx[count] == 0x0D)	// If the user pressed enter
 							{
-								UARTprintf("\nReceived enter, breaking for loop\n"); // Set this up so the user can press enter to restart typing the number
+								UARTprintf("\nResetting!\n"); // Set this up so the user can press enter to restart typing the number
 								break;
 							}
+							else if((UART_Rx[count] == 'Y' || UART_Rx[count] == 'y') && Therm_corr == Therm_corr)
+							{
+								check = 2;
+								break;
+							}
+
 						}
 						UARTprintf("\n");
 
-						// Check that the 4 characters are a number, followed by decimal, followed by two numbers, also check all 4 characters were recevied
+						// Check that the 4 characters are a number, followed by decimal, followed by two numbers, also check all 4 characters were received
 						if((UART_Rx[0] >= 0x30 && UART_Rx[0] <= 0x39) && (UART_Rx[1] >= 0x30 && UART_Rx[1] <= 0x39) && (UART_Rx[2] == 0x2E) && (UART_Rx[3] >= 0x30 && UART_Rx[3] <= 0x39) && count == 4)
 							check = 1;
 						else
@@ -14858,13 +14886,17 @@ int main(void) {
 					}
 					SetLED(BLUE_BUTTON_BLINK, 0);
 
-					float T_Vial = (UART_Rx[0] - 0x30) * 10 + (UART_Rx[1] - 0x30) + ((float) (UART_Rx[3] - 0x30))/10;	// Convert string into a float
-					UARTprintf("Converted to float: %d * 1000\n\n", (int) (T_Vial * 1000));
+					if(check == 1)
+					{
+						float T_Vial = (UART_Rx[0] - 0x30) * 10 + (UART_Rx[1] - 0x30) + ((float) (UART_Rx[3] - 0x30))/10;	// Convert string into a float
+						UARTprintf("Converted to float: %d * 1000\n\n", (int) (T_Vial * 1000));
 
-					//					UARTprintf("Received characters: %c%c%c%c\n", UART_Rx[0], UART_Rx[1], UART_Rx[2], UART_Rx[3]);
+						//					UARTprintf("Received characters: %c%c%c%c\n", UART_Rx[0], UART_Rx[1], UART_Rx[2], UART_Rx[3]);
 
-					Therm_corr = (T_Therm_F - T_Therm_S) / (T_Therm_S - T_Vial);
-					UARTprintf("Thermistor correction found: %d / 1000\n", (int) (Therm_corr * 1000));
+						Therm_corr = (T_Therm_F - T_Therm_S) / (T_Therm_S - T_Vial);
+						UARTprintf("Thermistor correction found: %d / 1000\n", (int) (Therm_corr * 1000));
+					}
+
 					if(Therm_corr >= -1 && Therm_corr <= -0.5)
 					{
 						UARTprintf("Thermistor correction seems realistic, saving to cartridge memory!\n");
@@ -14881,550 +14913,553 @@ int main(void) {
 				//
 				// Conductivity low point calibrant
 				//
-				if((gui32Error & 0) == 0)
+				if(CALIBRATE_CONDUCTIVITY)
 				{
-					update_Status(STATUS_TEST, OPERATION_TEST_RINSE);
-					UARTprintf("Pumping low point conductivity calibrant... \n");
-
-					RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);
-					FindPossitionZeroPump();
-					for (i = 0; i < Number_of_bubbles_Cond; i++) // Loop over air/solution cycle 3 times for single solution
+					if((gui32Error & 0) == 0)
 					{
-						RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
-						PumpVolume(FW, PumpVol_air_bubble, Speed_Fast, 1);
-						if(i == (Number_of_bubbles_Cond - 1))
-							PumpVolume(FW, PumpVol_Large_air_bubble, Speed_Fast, 1);
-						userDelay(valve_delay, 1);
-						RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
-						if(i == 0 && BUBBLES_IN_TUBE)
-							PumpVolume(FW, PumpVol_tube_bubble, Speed_Fast, 1);
-						PumpVolume(FW, PumpVol_Solution, Speed_Fast, 1);
-						if(i != (Number_of_bubbles_Cond - 1))
+						update_Status(STATUS_TEST, OPERATION_TEST_RINSE);
+						UARTprintf("Pumping low point conductivity calibrant... \n");
+
+						RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);
+						FindPossitionZeroPump();
+						for (i = 0; i < Number_of_bubbles_Cond; i++) // Loop over air/solution cycle 3 times for single solution
+						{
+							RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
+							PumpVolume(FW, PumpVol_air_bubble, Speed_Fast, 1);
+							if(i == (Number_of_bubbles_Cond - 1))
+								PumpVolume(FW, PumpVol_Large_air_bubble, Speed_Fast, 1);
 							userDelay(valve_delay, 1);
-					}
-					PumpVolume(FW, PumpVol_Rinse, Speed_Fast, 1);
-					userDelay(valve_delay, 1);
-					RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
-					PumpVolume(FW, PumpVol_plug, Speed_Fast, 1);
-				}
-
-				float CalConductivity[3] = {0,0,0};
-				float CalConductivity_alt[3] = {0,0,0};
-				float T_Cond[3] = {0,0,0};
-				float Conductivity_cal[3] = {64.1, 64.1, 64.1};
-//				float Conductivity_cal[3] = {364, 364, 364};
-
-				// Measure conductivity
-				// Set RE and CE floating and close RE/CE loop for conductivity
-				IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWA, 1);
-				IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWB, 0);
-
-				// Set low current range
-				// 10.7 uApp R = 309k + 499k = 808k
-				IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 0);
-				IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 0);
-
-//				// Set mid current range
-//				// 20 uApp R = 430k
-//				IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 1);
-//				IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 1);
-
-				uint8_t ExtraCondPoints = 3;
-				for(i = 0; i < 3; i++)
-				{
-					if(i > 0 && ExtraCondPoints > 0)
-					{
-						i = 0;
-						ExtraCondPoints--;
+							RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
+							if(i == 0 && BUBBLES_IN_TUBE)
+								PumpVolume(FW, PumpVol_tube_bubble, Speed_Fast, 1);
+							PumpVolume(FW, PumpVol_Solution, Speed_Fast, 1);
+							if(i != (Number_of_bubbles_Cond - 1))
+								userDelay(valve_delay, 1);
+						}
+						PumpVolume(FW, PumpVol_Rinse, Speed_Fast, 1);
+						userDelay(valve_delay, 1);
+						RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
+						PumpVolume(FW, PumpVol_plug, Speed_Fast, 1);
 					}
 
-					RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
-					PumpVolume(FW, PumpVol_Rinse + PumpVol_Solution, Speed_Fast, 1);
-					userDelay(valve_delay, 1);
-					RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
-					PumpVolume(FW, PumpVol_plug, Speed_Fast, 1);
+					float CalConductivity[3] = {0,0,0};
+					float CalConductivity_alt[3] = {0,0,0};
+					float T_Cond[3] = {0,0,0};
+					float Conductivity_cal[3] = {64.1, 64.1, 64.1};
+	//				float Conductivity_cal[3] = {364, 364, 364};
 
-					ConnectMemory(0);
+					// Measure conductivity
+					// Set RE and CE floating and close RE/CE loop for conductivity
+					IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWA, 1);
+					IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWB, 0);
 
 					// Set low current range
 					// 10.7 uApp R = 309k + 499k = 808k
 					IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 0);
 					IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 0);
 
-					if(gABoard >= ARV1_0B)
+	//				// Set mid current range
+	//				// 20 uApp R = 430k
+	//				IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 1);
+	//				IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 1);
+
+					uint8_t ExtraCondPoints = 3;
+					for(i = 0; i < 3; i++)
 					{
-						InitWaveGen(0, 1000);	// Change frequency to 1kHz
+						if(i > 0 && ExtraCondPoints > 0)
+						{
+							i = 0;
+							ExtraCondPoints--;
+						}
+
+						RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
+						PumpVolume(FW, PumpVol_Rinse + PumpVol_Solution, Speed_Fast, 1);
+						userDelay(valve_delay, 1);
+						RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
+						PumpVolume(FW, PumpVol_plug, Speed_Fast, 1);
+
+						ConnectMemory(0);
 
 						// Set low current range
 						// 10.7 uApp R = 309k + 499k = 808k
 						IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 0);
 						IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 0);
 
-						uint8_t Check = 0, attempt = 0;
+						if(gABoard >= ARV1_0B)
+						{
+							InitWaveGen(0, 1000);	// Change frequency to 1kHz
 
+							// Set low current range
+							// 10.7 uApp R = 309k + 499k = 808k
+							IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 0);
+							IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 0);
+
+							uint8_t Check = 0, attempt = 0;
+
+							while(Check != 1)
+							{
+								WaveGenSet(1);
+
+								Check = CheckCond(1000);
+								if(attempt == 5)
+								{
+									gui32Error |= WAVE_GEN_FAIL;
+									break;
+								}
+
+								if(Check != 1)
+								{
+									InitWaveGen(1, 1000);
+									attempt++;
+								}
+							}
+
+							CalConductivity_alt[i] = ConductivityMovingAvg(1000);		// uV
+
+							UARTprintf("Cond Raw 1kHz: %d\n", (int) (CalConductivity_alt[i] * 1000));
+
+							WaveGenSet(0);
+
+							InitWaveGen(0, 5000);	// Change frequency back to 5kHz
+						}
+
+						// Set low current range
+						// 10.7 uApp R = 309k + 499k = 808k
+						IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 0);
+						IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 0);
+
+						uint8_t Check = 0;
 						while(Check != 1)
 						{
 							WaveGenSet(1);
 
-							Check = CheckCond(1000);
-							if(attempt == 5)
-							{
-								gui32Error |= WAVE_GEN_FAIL;
-								break;
-							}
-
+							Check = CheckCond(COND_FREQ);
 							if(Check != 1)
 							{
-								InitWaveGen(1, 1000);
-								attempt++;
+								InitWaveGen(1, COND_FREQ);
 							}
 						}
 
-						CalConductivity_alt[i] = ConductivityMovingAvg(1000);		// uV
+						CalConductivity[i] = ConductivityMovingAvg(COND_FREQ);
+						UARTprintf("Low Cond Raw: %d\n", (int) (CalConductivity[i] * 1000));
 
-						UARTprintf("Cond Raw 1kHz: %d\n", (int) (CalConductivity_alt[i] * 1000));
+						WaveGenSet(0);	// Turn off waveform generator when switching ranges
 
-						WaveGenSet(0);
 
-						InitWaveGen(0, 5000);	// Change frequency back to 5kHz
+
+						ConnectMemory(1);
+
+						T_Cond[i] = MeasureTemperature(1);
+						// Perform temperature correction here after calculations for ISEs so we are using the conductivity at temperature, not the adjusted conductivity
+						if(ExtraCondPoints == 0)
+							Conductivity_cal[i] *= (1 + COND_TCOMP_CONDLOW*(T_Cond[i] - 25));	// Multiply because we already have cond at 25 and want it at measured temperature
+						UARTprintf("Temperature: %d C * 1000\n", (int) (T_Cond[i] * 1000));
 					}
 
-					// Set low current range
-					// 10.7 uApp R = 309k + 499k = 808k
-					IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 0);
-					IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 0);
-
-					uint8_t Check = 0;
-					while(Check != 1)
+					// Push air back into cond cal port before moving to next solution
+					if(BUBBLES_IN_TUBE)
 					{
-						WaveGenSet(1);
-
-						Check = CheckCond(COND_FREQ);
-						if(Check != 1)
-						{
-							InitWaveGen(1, COND_FREQ);
-						}
-					}
-
-					CalConductivity[i] = ConductivityMovingAvg(COND_FREQ);
-					UARTprintf("Low Cond Raw: %d\n", (int) (CalConductivity[i] * 1000));
-
-					WaveGenSet(0);	// Turn off waveform generator when switching ranges
-
-
-
-					ConnectMemory(1);
-
-					T_Cond[i] = MeasureTemperature(1);
-					// Perform temperature correction here after calculations for ISEs so we are using the conductivity at temperature, not the adjusted conductivity
-					if(ExtraCondPoints == 0)
-						Conductivity_cal[i] *= (1 + COND_TCOMP_CONDLOW*(T_Cond[i] - 25));	// Multiply because we already have cond at 25 and want it at measured temperature
-					UARTprintf("Temperature: %d C * 1000\n", (int) (T_Cond[i] * 1000));
-				}
-
-				// Push air back into cond cal port before moving to next solution
-				if(BUBBLES_IN_TUBE)
-				{
-					RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
-					PumpVolume(BW, PumpVol_tube_bubble, Speed_Fast, 1);
-					userDelay(valve_delay, 1);
-				}
-
-				if(PURGE_SAMPLE)
-				{
-					UARTprintf("Purging sample tube by pushing air backwards into it\n");
-					RunValveToPossition_Bidirectional(V_AIR, VALVE_STEPS_PER_POSITION);
-					PumpVolume(FW, PumpVol_sample_rinse + PumpVol_Sample_Prime + 33.6, Speed_Fast, 0);
-					userDelay(valve_delay_after_air, 0);
-					RunValveToPossition_Bidirectional(V_SAMP, VALVE_STEPS_PER_POSITION);
-					PumpVolume(BW, PumpVol_Sample_Prime, Speed_Fast, 0);
-					userDelay(valve_delay, 0);
-				}
-
-				//
-				// Conductivity mid point calibrant
-				//
-				UARTprintf("Fill sample vial with mid conductivity calibrant\n");
-
-				BuzzerSound(400);
-				SetLED(BLUE_BUTTON_BLINK, 1);
-				while(GPIOPinRead(GPIO_PORTF_BASE, GPIO_PIN_3) == GPIO_PIN_3);
-				while(GPIOPinRead(GPIO_PORTF_BASE, GPIO_PIN_3) == 0);
-				SetLED(BLUE_BUTTON_BLINK, 0);
-
-				if((gui32Error & 0) == 0)
-				{
-					update_Status(STATUS_TEST, OPERATION_TEST_RINSE);
-					UARTprintf("Pumping mid point conductivity calibrant... \n");
-
-					RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);
-					FindPossitionZeroPump();
-					for (i = 0; i < Number_of_bubbles_Cond; i++) // Loop over air/solution cycle 3 times for single solution
-					{
-						RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
-						PumpVolume(FW, PumpVol_air_bubble, Speed_Fast, 1);
-						if(i == (Number_of_bubbles_Cond - 1))
-							PumpVolume(FW, PumpVol_Large_air_bubble, Speed_Fast, 1);
-						userDelay(valve_delay, 1);
 						RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
-						if(i == 0 && BUBBLES_IN_TUBE)
-							PumpVolume(FW, PumpVol_tube_bubble, Speed_Fast, 1);
-						PumpVolume(FW, PumpVol_Solution, Speed_Fast, 1);
-						if(i != (Number_of_bubbles_Cond - 1))
-							userDelay(valve_delay, 1);
+						PumpVolume(BW, PumpVol_tube_bubble, Speed_Fast, 1);
+						userDelay(valve_delay, 1);
 					}
-					PumpVolume(FW, PumpVol_Rinse, Speed_Fast, 1);
-					userDelay(valve_delay, 1);
-					RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
-					PumpVolume(FW, PumpVol_plug, Speed_Fast, 1);
-				}
 
-				float Mid_CalConductivity[3] = {0,0,0};
-				float Mid_CalConductivity_alt[3] = {0,0,0};
-				float Mid_T_Cond[3] = {0,0,0};
-				float Mid_Conductivity_cal[3] = {1000, 1000, 1000};	// {1077, 1077, 1077};
-
-				// Measure conductivity
-				// Set RE and CE floating and close RE/CE loop for conductivity
-				IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWA, 1);
-				IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWB, 0);
-
-				// Set mid current range
-				// 20 uApp R = 430k
-				IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 1);
-				IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 1);
-
-				ExtraCondPoints = 3;
-				for(i = 0; i < 3; i++)
-				{
-					if(i > 0 && ExtraCondPoints > 0)
+					if(PURGE_SAMPLE)
 					{
-						i = 0;
-						ExtraCondPoints--;
+						UARTprintf("Purging sample tube by pushing air backwards into it\n");
+						RunValveToPossition_Bidirectional(V_AIR, VALVE_STEPS_PER_POSITION);
+						PumpVolume(FW, PumpVol_sample_rinse + PumpVol_Sample_Prime + 33.6, Speed_Fast, 0);
+						userDelay(valve_delay_after_air, 0);
+						RunValveToPossition_Bidirectional(V_SAMP, VALVE_STEPS_PER_POSITION);
+						PumpVolume(BW, PumpVol_Sample_Prime, Speed_Fast, 0);
+						userDelay(valve_delay, 0);
 					}
 
-					RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
-					PumpVolume(FW, PumpVol_Rinse + PumpVol_Solution, Speed_Fast, 1);
-					userDelay(valve_delay, 1);
-					RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
-					PumpVolume(FW, PumpVol_plug, Speed_Fast, 1);
+					//
+					// Conductivity mid point calibrant
+					//
+					UARTprintf("Fill sample vial with mid conductivity calibrant\n");
 
-					ConnectMemory(0);
+					BuzzerSound(400);
+					SetLED(BLUE_BUTTON_BLINK, 1);
+					while(GPIOPinRead(GPIO_PORTF_BASE, GPIO_PIN_3) == GPIO_PIN_3);
+					while(GPIOPinRead(GPIO_PORTF_BASE, GPIO_PIN_3) == 0);
+					SetLED(BLUE_BUTTON_BLINK, 0);
+
+					if((gui32Error & 0) == 0)
+					{
+						update_Status(STATUS_TEST, OPERATION_TEST_RINSE);
+						UARTprintf("Pumping mid point conductivity calibrant... \n");
+
+						RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);
+						FindPossitionZeroPump();
+						for (i = 0; i < Number_of_bubbles_Cond; i++) // Loop over air/solution cycle 3 times for single solution
+						{
+							RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
+							PumpVolume(FW, PumpVol_air_bubble, Speed_Fast, 1);
+							if(i == (Number_of_bubbles_Cond - 1))
+								PumpVolume(FW, PumpVol_Large_air_bubble, Speed_Fast, 1);
+							userDelay(valve_delay, 1);
+							RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
+							if(i == 0 && BUBBLES_IN_TUBE)
+								PumpVolume(FW, PumpVol_tube_bubble, Speed_Fast, 1);
+							PumpVolume(FW, PumpVol_Solution, Speed_Fast, 1);
+							if(i != (Number_of_bubbles_Cond - 1))
+								userDelay(valve_delay, 1);
+						}
+						PumpVolume(FW, PumpVol_Rinse, Speed_Fast, 1);
+						userDelay(valve_delay, 1);
+						RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
+						PumpVolume(FW, PumpVol_plug, Speed_Fast, 1);
+					}
+
+					float Mid_CalConductivity[3] = {0,0,0};
+					float Mid_CalConductivity_alt[3] = {0,0,0};
+					float Mid_T_Cond[3] = {0,0,0};
+					float Mid_Conductivity_cal[3] = {1000, 1000, 1000};	// {1077, 1077, 1077};
+
+					// Measure conductivity
+					// Set RE and CE floating and close RE/CE loop for conductivity
+					IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWA, 1);
+					IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWB, 0);
 
 					// Set mid current range
 					// 20 uApp R = 430k
 					IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 1);
 					IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 1);
 
-					if(gABoard >= ARV1_0B)
+					ExtraCondPoints = 3;
+					for(i = 0; i < 3; i++)
 					{
-						InitWaveGen(0, 1000);	// Change frequency to 1kHz
+						if(i > 0 && ExtraCondPoints > 0)
+						{
+							i = 0;
+							ExtraCondPoints--;
+						}
+
+						RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
+						PumpVolume(FW, PumpVol_Rinse + PumpVol_Solution, Speed_Fast, 1);
+						userDelay(valve_delay, 1);
+						RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
+						PumpVolume(FW, PumpVol_plug, Speed_Fast, 1);
+
+						ConnectMemory(0);
 
 						// Set mid current range
 						// 20 uApp R = 430k
 						IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 1);
 						IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 1);
 
-						uint8_t Check = 0, attempt = 0;
-
-						while(Check != 1)
+						if(gABoard >= ARV1_0B)
 						{
-							WaveGenSet(1);
+							InitWaveGen(0, 1000);	// Change frequency to 1kHz
 
-							Check = CheckCond(1000);
-							if(attempt == 5)
+							// Set mid current range
+							// 20 uApp R = 430k
+							IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 1);
+							IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 1);
+
+							uint8_t Check = 0, attempt = 0;
+
+							while(Check != 1)
 							{
-								gui32Error |= WAVE_GEN_FAIL;
-								break;
+								WaveGenSet(1);
+
+								Check = CheckCond(1000);
+								if(attempt == 5)
+								{
+									gui32Error |= WAVE_GEN_FAIL;
+									break;
+								}
+
+								if(Check != 1)
+								{
+									InitWaveGen(1, 1000);
+									attempt++;
+								}
 							}
 
-							if(Check != 1)
-							{
-								InitWaveGen(1, 1000);
-								attempt++;
-							}
+							Mid_CalConductivity_alt[i] = ConductivityMovingAvg(1000);		// uV
+
+							UARTprintf("Cond Raw 1kHz: %d\n", (int) (Mid_CalConductivity_alt[i] * 1000));
+
+							WaveGenSet(0);
+
+							InitWaveGen(0, 5000);	// Change frequency back to 5kHz
 						}
 
-						Mid_CalConductivity_alt[i] = ConductivityMovingAvg(1000);		// uV
-
-						UARTprintf("Cond Raw 1kHz: %d\n", (int) (Mid_CalConductivity_alt[i] * 1000));
-
-						WaveGenSet(0);
-
-						InitWaveGen(0, 5000);	// Change frequency back to 5kHz
-					}
-
-					// Set mid current range
-					// 20 uApp R = 430k
-					IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 1);
-					IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 1);
-
-					uint8_t Check = 0;
-					while(Check != 1)
-					{
-						WaveGenSet(1);
-
-						Check = CheckCond(COND_FREQ);
-						if(Check != 1)
-						{
-							InitWaveGen(1, COND_FREQ);
-						}
-					}
-
-					Mid_CalConductivity[i] = ConductivityMovingAvg(COND_FREQ);
-					UARTprintf("Cond Raw: %d\n", (int) (Mid_CalConductivity[i] * 1000));
-
-					WaveGenSet(0);	// Turn off waveform generator when switching ranges
-
-					ConnectMemory(1);
-
-					Mid_T_Cond[i] = MeasureTemperature(1);
-
-					if(ExtraCondPoints == 0)
-						Mid_Conductivity_cal[i] *= (1 + 0.02 *(Mid_T_Cond[i] - 25));	// Multiply because we already have cond at 25 and want it at measured temperature
-					UARTprintf("Temperature: %d C * 1000\n", (int) (Mid_T_Cond[i] * 1000));
-				}
-
-				//
-				// Conductivity high point calibrant
-				//
-				UARTprintf("Fill sample vial with high conductivity calibrant\n");
-
-				BuzzerSound(400);
-				SetLED(BLUE_BUTTON_BLINK, 1);
-				while(GPIOPinRead(GPIO_PORTF_BASE, GPIO_PIN_3) == GPIO_PIN_3);
-				while(GPIOPinRead(GPIO_PORTF_BASE, GPIO_PIN_3) == 0);
-				SetLED(BLUE_BUTTON_BLINK, 0);
-
-				if((gui32Error & 0) == 0)
-				{
-					update_Status(STATUS_TEST, OPERATION_TEST_RINSE);
-					UARTprintf("Pumping high point conductivity calibrant... \n");
-
-					RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);
-					FindPossitionZeroPump();
-					for (i = 0; i < Number_of_bubbles_Cond; i++) // Loop over air/solution cycle 3 times for single solution
-					{
-						RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
-						PumpVolume(FW, PumpVol_air_bubble, Speed_Fast, 1);
-						if(i == (Number_of_bubbles_Cond - 1))
-							PumpVolume(FW, PumpVol_Large_air_bubble, Speed_Fast, 1);
-						userDelay(valve_delay, 1);
-						RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
-						if(i == 0 && BUBBLES_IN_TUBE)
-							PumpVolume(FW, PumpVol_tube_bubble, Speed_Fast, 1);
-						PumpVolume(FW, PumpVol_Solution, Speed_Fast, 1);
-						if(i != (Number_of_bubbles_Cond - 1))
-							userDelay(valve_delay, 1);
-					}
-					PumpVolume(FW, PumpVol_Rinse, Speed_Fast, 1);
-					userDelay(valve_delay, 1);
-					RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
-					PumpVolume(FW, PumpVol_plug, Speed_Fast, 1);
-				}
-
-				float High_CalConductivity[3] = {0,0,0};
-				float High_CalConductivity_alt[3] = {0,0,0};
-				float High_T_Cond[3] = {0,0,0};
-				float High_Conductivity_cal[3] = {2000, 2000, 2000};
-
-				// Measure conductivity
-				// Set RE and CE floating and close RE/CE loop for conductivity
-				IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWA, 1);
-				IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWB, 0);
-
-				// Set high current range
-				// 45 uApp R = 180k
-				IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 0);
-				IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 1);
-
-				ExtraCondPoints = 3;
-				for(i = 0; i < 3; i++)
-				{
-					if(i > 0 && ExtraCondPoints > 0)
-					{
-						i = 0;
-						ExtraCondPoints--;
-					}
-
-					RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
-					PumpVolume(FW, PumpVol_Rinse + PumpVol_Solution, Speed_Fast, 1);
-					userDelay(valve_delay, 1);
-					RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
-					PumpVolume(FW, PumpVol_plug, Speed_Fast, 1);
-
-					ConnectMemory(0);
-
-					if(gABoard >= ARV1_0B)
-					{
-						InitWaveGen(0, 1000);	// Change frequency to 1kHz
-
-						// Set high current range
-						// 45 uApp R = 180k
-						IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 0);
+						// Set mid current range
+						// 20 uApp R = 430k
+						IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 1);
 						IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 1);
 
-						uint8_t Check = 0, attempt = 0;
-
+						uint8_t Check = 0;
 						while(Check != 1)
 						{
 							WaveGenSet(1);
 
-							Check = CheckCond(1000);
-							if(attempt == 5)
-							{
-								gui32Error |= WAVE_GEN_FAIL;
-								break;
-							}
-
+							Check = CheckCond(COND_FREQ);
 							if(Check != 1)
 							{
-								InitWaveGen(1, 1000);
-								attempt++;
+								InitWaveGen(1, COND_FREQ);
 							}
 						}
 
-						High_CalConductivity_alt[i] = ConductivityMovingAvg(1000);		// uV
+						Mid_CalConductivity[i] = ConductivityMovingAvg(COND_FREQ);
+						UARTprintf("Cond Raw: %d\n", (int) (Mid_CalConductivity[i] * 1000));
 
-						UARTprintf("Cond Raw 1kHz: %d\n", (int) (High_CalConductivity_alt[i] * 1000));
+						WaveGenSet(0);	// Turn off waveform generator when switching ranges
 
-						WaveGenSet(0);
+						ConnectMemory(1);
 
-						InitWaveGen(0, 5000);	// Change frequency back to 5kHz
+						Mid_T_Cond[i] = MeasureTemperature(1);
+
+						if(ExtraCondPoints == 0)
+							Mid_Conductivity_cal[i] *= (1 + 0.02 *(Mid_T_Cond[i] - 25));	// Multiply because we already have cond at 25 and want it at measured temperature
+						UARTprintf("Temperature: %d C * 1000\n", (int) (Mid_T_Cond[i] * 1000));
 					}
+
+					//
+					// Conductivity high point calibrant
+					//
+					UARTprintf("Fill sample vial with high conductivity calibrant\n");
+
+					BuzzerSound(400);
+					SetLED(BLUE_BUTTON_BLINK, 1);
+					while(GPIOPinRead(GPIO_PORTF_BASE, GPIO_PIN_3) == GPIO_PIN_3);
+					while(GPIOPinRead(GPIO_PORTF_BASE, GPIO_PIN_3) == 0);
+					SetLED(BLUE_BUTTON_BLINK, 0);
+
+					if((gui32Error & 0) == 0)
+					{
+						update_Status(STATUS_TEST, OPERATION_TEST_RINSE);
+						UARTprintf("Pumping high point conductivity calibrant... \n");
+
+						RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);
+						FindPossitionZeroPump();
+						for (i = 0; i < Number_of_bubbles_Cond; i++) // Loop over air/solution cycle 3 times for single solution
+						{
+							RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
+							PumpVolume(FW, PumpVol_air_bubble, Speed_Fast, 1);
+							if(i == (Number_of_bubbles_Cond - 1))
+								PumpVolume(FW, PumpVol_Large_air_bubble, Speed_Fast, 1);
+							userDelay(valve_delay, 1);
+							RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
+							if(i == 0 && BUBBLES_IN_TUBE)
+								PumpVolume(FW, PumpVol_tube_bubble, Speed_Fast, 1);
+							PumpVolume(FW, PumpVol_Solution, Speed_Fast, 1);
+							if(i != (Number_of_bubbles_Cond - 1))
+								userDelay(valve_delay, 1);
+						}
+						PumpVolume(FW, PumpVol_Rinse, Speed_Fast, 1);
+						userDelay(valve_delay, 1);
+						RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
+						PumpVolume(FW, PumpVol_plug, Speed_Fast, 1);
+					}
+
+					float High_CalConductivity[3] = {0,0,0};
+					float High_CalConductivity_alt[3] = {0,0,0};
+					float High_T_Cond[3] = {0,0,0};
+					float High_Conductivity_cal[3] = {2000, 2000, 2000};
+
+					// Measure conductivity
+					// Set RE and CE floating and close RE/CE loop for conductivity
+					IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWA, 1);
+					IO_Ext_Set(IO_EXT1_ADDR, 3, REF_EL_SWB, 0);
 
 					// Set high current range
 					// 45 uApp R = 180k
 					IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 0);
 					IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 1);
 
-					uint8_t Check = 0;
-					while(Check != 1)
+					ExtraCondPoints = 3;
+					for(i = 0; i < 3; i++)
 					{
-						WaveGenSet(1);
-
-						Check = CheckCond(COND_FREQ);
-						if(Check != 1)
+						if(i > 0 && ExtraCondPoints > 0)
 						{
-							InitWaveGen(1, COND_FREQ);
+							i = 0;
+							ExtraCondPoints--;
 						}
+
+						RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
+						PumpVolume(FW, PumpVol_Rinse + PumpVol_Solution, Speed_Fast, 1);
+						userDelay(valve_delay, 1);
+						RunValveToPossition_Bidirectional_AbortReady(V_AIR, VALVE_STEPS_PER_POSITION);		// Always start with air purge
+						PumpVolume(FW, PumpVol_plug, Speed_Fast, 1);
+
+						ConnectMemory(0);
+
+						if(gABoard >= ARV1_0B)
+						{
+							InitWaveGen(0, 1000);	// Change frequency to 1kHz
+
+							// Set high current range
+							// 45 uApp R = 180k
+							IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 0);
+							IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 1);
+
+							uint8_t Check = 0, attempt = 0;
+
+							while(Check != 1)
+							{
+								WaveGenSet(1);
+
+								Check = CheckCond(1000);
+								if(attempt == 5)
+								{
+									gui32Error |= WAVE_GEN_FAIL;
+									break;
+								}
+
+								if(Check != 1)
+								{
+									InitWaveGen(1, 1000);
+									attempt++;
+								}
+							}
+
+							High_CalConductivity_alt[i] = ConductivityMovingAvg(1000);		// uV
+
+							UARTprintf("Cond Raw 1kHz: %d\n", (int) (High_CalConductivity_alt[i] * 1000));
+
+							WaveGenSet(0);
+
+							InitWaveGen(0, 5000);	// Change frequency back to 5kHz
+						}
+
+						// Set high current range
+						// 45 uApp R = 180k
+						IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWA, 0);
+						IO_Ext_Set(IO_EXT1_ADDR, 3, COND_GAIN_SWB, 1);
+
+						uint8_t Check = 0;
+						while(Check != 1)
+						{
+							WaveGenSet(1);
+
+							Check = CheckCond(COND_FREQ);
+							if(Check != 1)
+							{
+								InitWaveGen(1, COND_FREQ);
+							}
+						}
+
+						High_CalConductivity[i] = ConductivityMovingAvg(COND_FREQ);
+						UARTprintf("Cond Raw: %d\n", (int) (High_CalConductivity[i] * 1000));
+
+						WaveGenSet(0);	// Turn off waveform generator when switching ranges
+
+						ConnectMemory(1);
+
+						High_T_Cond[i] = MeasureTemperature(1);
+						// Perform temperature correction here after calculations for ISEs so we are using the conductivity at temperature, not the adjusted conductivity
+						if(ExtraCondPoints == 0)
+							High_Conductivity_cal[i] *= (1 + 0.02 *(High_T_Cond[i] - 25));	// Multiply because we already have cond at 25 and want it at measured temperature
+						UARTprintf("Temperature: %d C * 1000\n", (int) (High_T_Cond[i] * 1000));
 					}
 
-					High_CalConductivity[i] = ConductivityMovingAvg(COND_FREQ);
-					UARTprintf("Cond Raw: %d\n", (int) (High_CalConductivity[i] * 1000));
+					float Conductivity_low_cal = (Conductivity_cal[0] + Conductivity_cal[1] + Conductivity_cal[2]) / 3.0;
+					float Conductivity_reading_low = (CalConductivity[0] + CalConductivity[1] + CalConductivity[2]) / 3.0;
+					float Conductivity_reading_low_alt = (CalConductivity_alt[0] + CalConductivity_alt[1] + CalConductivity_alt[2]) / 3.0;
 
-					WaveGenSet(0);	// Turn off waveform generator when switching ranges
+					float Conductivity_mid_cal = (Mid_Conductivity_cal[0] + Mid_Conductivity_cal[1] + Mid_Conductivity_cal[2]) / 3.0;
+					float Conductivity_reading_mid = (Mid_CalConductivity[0] + Mid_CalConductivity[1] + Mid_CalConductivity[2]) / 3.0;
+					float Conductivity_reading_mid_alt = (Mid_CalConductivity_alt[0] + Mid_CalConductivity_alt[1] + Mid_CalConductivity_alt[2]) / 3.0;
 
-					ConnectMemory(1);
+					float Conductivity_high_cal = (High_Conductivity_cal[0] + High_Conductivity_cal[1] + High_Conductivity_cal[2]) / 3.0;
+					float Conductivity_reading_high = (High_CalConductivity[0] + High_CalConductivity[1] + High_CalConductivity[2]) / 3.0;
+					float Conductivity_reading_high_alt = (High_CalConductivity_alt[0] + High_CalConductivity_alt[1] + High_CalConductivity_alt[2]) / 3.0;
 
-					High_T_Cond[i] = MeasureTemperature(1);
-					// Perform temperature correction here after calculations for ISEs so we are using the conductivity at temperature, not the adjusted conductivity
-					if(ExtraCondPoints == 0)
-						High_Conductivity_cal[i] *= (1 + 0.02 *(High_T_Cond[i] - 25));	// Multiply because we already have cond at 25 and want it at measured temperature
-					UARTprintf("Temperature: %d C * 1000\n", (int) (High_T_Cond[i] * 1000));
-				}
+					float Low_Current, Mid_Current, High_Current;
+					EEPROMRead((uint32_t *) &Low_Current, OFFSET_COND_I_LOW, 4);
+					EEPROMRead((uint32_t *) &Mid_Current, OFFSET_COND_I_MID, 4);
+					EEPROMRead((uint32_t *) &High_Current, OFFSET_COND_I_HIGH, 4);
 
-				float Conductivity_low_cal = (Conductivity_cal[0] + Conductivity_cal[1] + Conductivity_cal[2]) / 3.0;
-				float Conductivity_reading_low = (CalConductivity[0] + CalConductivity[1] + CalConductivity[2]) / 3.0;
-				float Conductivity_reading_low_alt = (CalConductivity_alt[0] + CalConductivity_alt[1] + CalConductivity_alt[2]) / 3.0;
+					if(Low_Current != Low_Current)
+						Low_Current = 10.76 * 0.795;	// Average from circuits before ARV1_0B
+					if(Mid_Current != Mid_Current)
+						Mid_Current = 19.89 * 0.8;	// Average from circuits before ARV1_0B
+					if(High_Current != High_Current)
+						High_Current = 43.57 * .812;	// Average from circuits before ARV1_0B
 
-				float Conductivity_mid_cal = (Mid_Conductivity_cal[0] + Mid_Conductivity_cal[1] + Mid_Conductivity_cal[2]) / 3.0;
-				float Conductivity_reading_mid = (Mid_CalConductivity[0] + Mid_CalConductivity[1] + Mid_CalConductivity[2]) / 3.0;
-				float Conductivity_reading_mid_alt = (Mid_CalConductivity_alt[0] + Mid_CalConductivity_alt[1] + Mid_CalConductivity_alt[2]) / 3.0;
+					float Low_Current_alt, Mid_Current_alt, High_Current_alt;
+					EEPROMRead((uint32_t *) &Low_Current_alt, OFFSET_COND_ALT_I_LOW, 4);
+					EEPROMRead((uint32_t *) &Mid_Current_alt, OFFSET_COND_ALT_I_MID, 4);
+					EEPROMRead((uint32_t *) &High_Current_alt, OFFSET_COND_ALT_I_HIGH, 4);
 
-				float Conductivity_high_cal = (High_Conductivity_cal[0] + High_Conductivity_cal[1] + High_Conductivity_cal[2]) / 3.0;
-				float Conductivity_reading_high = (High_CalConductivity[0] + High_CalConductivity[1] + High_CalConductivity[2]) / 3.0;
-				float Conductivity_reading_high_alt = (High_CalConductivity_alt[0] + High_CalConductivity_alt[1] + High_CalConductivity_alt[2]) / 3.0;
+					if(Low_Current_alt != Low_Current_alt)
+						Low_Current_alt = Low_Current * 1.22;	// Because of low pass filter the frequency at 1kHz will be ~22% higher than 5kHz
+					if(Mid_Current_alt != Mid_Current_alt)
+						Mid_Current_alt = Mid_Current * 1.22;	// Because of low pass filter the frequency at 1kHz will be ~22% higher than 5kHz
+					if(High_Current_alt != High_Current_alt)
+						High_Current_alt = High_Current * 1.22;	// Because of low pass filter the frequency at 1kHz will be ~22% higher than 5kHz
 
-				float Low_Current, Mid_Current, High_Current;
-				EEPROMRead((uint32_t *) &Low_Current, OFFSET_COND_I_LOW, 4);
-				EEPROMRead((uint32_t *) &Mid_Current, OFFSET_COND_I_MID, 4);
-				EEPROMRead((uint32_t *) &High_Current, OFFSET_COND_I_HIGH, 4);
+					Cond_Slope = (High_Current*1000000/Conductivity_reading_high - Mid_Current*1000000/Conductivity_reading_mid)/((Conductivity_high_cal - Conductivity_mid_cal));
+					float Cond_Slope_alt;
+					if(gABoard >= ARV1_0B)
+						Cond_Slope_alt = ((1000000 * High_Current_alt)/Conductivity_reading_high_alt - (1000000 * Mid_Current_alt)/Conductivity_reading_mid_alt)/((Conductivity_high_cal - Conductivity_mid_cal));
 
-				if(Low_Current != Low_Current)
-					Low_Current = 10.76 * 0.795;	// Average from circuits before ARV1_0B
-				if(Mid_Current != Mid_Current)
-					Mid_Current = 19.89 * 0.8;	// Average from circuits before ARV1_0B
-				if(High_Current != High_Current)
-					High_Current = 43.57 * .812;	// Average from circuits before ARV1_0B
-
-				float Low_Current_alt, Mid_Current_alt, High_Current_alt;
-				EEPROMRead((uint32_t *) &Low_Current_alt, OFFSET_COND_ALT_I_LOW, 4);
-				EEPROMRead((uint32_t *) &Mid_Current_alt, OFFSET_COND_ALT_I_MID, 4);
-				EEPROMRead((uint32_t *) &High_Current_alt, OFFSET_COND_ALT_I_HIGH, 4);
-
-				if(Low_Current_alt != Low_Current_alt)
-					Low_Current_alt = Low_Current * 1.22;	// Because of low pass filter the frequency at 1kHz will be ~22% higher than 5kHz
-				if(Mid_Current_alt != Mid_Current_alt)
-					Mid_Current_alt = Mid_Current * 1.22;	// Because of low pass filter the frequency at 1kHz will be ~22% higher than 5kHz
-				if(High_Current_alt != High_Current_alt)
-					High_Current_alt = High_Current * 1.22;	// Because of low pass filter the frequency at 1kHz will be ~22% higher than 5kHz
-
-				Cond_Slope = (High_Current*1000000/Conductivity_reading_high - Mid_Current*1000000/Conductivity_reading_mid)/((Conductivity_high_cal - Conductivity_mid_cal));
-				float Cond_Slope_alt;
-				if(gABoard >= ARV1_0B)
-					Cond_Slope_alt = ((1000000 * High_Current_alt)/Conductivity_reading_high_alt - (1000000 * Mid_Current_alt)/Conductivity_reading_mid_alt)/((Conductivity_high_cal - Conductivity_mid_cal));
-
-				UARTprintf("Low calibrant:\n");
-				UARTprintf("Temperature Corrected conductivity: %d, %d, %d uS/cm * 1000\n", (int) (Conductivity_cal[0] * 1000), (int) (Conductivity_cal[1] * 1000), (int) (Conductivity_cal[2] * 1000));
-				UARTprintf("Average temperature corrected conductivity: %d uS/cm * 1000\n", (int) (Conductivity_low_cal * 1000));
-				UARTprintf("Average conductivity reading: %d\n", (int) (Conductivity_reading_low * 1000));
+					UARTprintf("Low calibrant:\n");
+					UARTprintf("Temperature Corrected conductivity: %d, %d, %d uS/cm * 1000\n", (int) (Conductivity_cal[0] * 1000), (int) (Conductivity_cal[1] * 1000), (int) (Conductivity_cal[2] * 1000));
+					UARTprintf("Average temperature corrected conductivity: %d uS/cm * 1000\n", (int) (Conductivity_low_cal * 1000));
+					UARTprintf("Average conductivity reading: %d\n", (int) (Conductivity_reading_low * 1000));
 
 
-				Conductivity_reading_low = Low_Current / Conductivity_reading_low;	// Current adjust this reading so the factory calibration holds across Roam units
-				if(gABoard >= ARV1_0B)
-					UARTprintf("1000 Hz Current adjusted conductivity reading: %d\n", (int) (Low_Current_alt * 1000000 / Conductivity_reading_low_alt * 1000));
-				UARTprintf("%d Hz Current adjusted conductivity reading: %d\n", COND_FREQ, (int) (Conductivity_reading_low * 1000000 * 1000));
+					Conductivity_reading_low = Low_Current / Conductivity_reading_low;	// Current adjust this reading so the factory calibration holds across Roam units
+					if(gABoard >= ARV1_0B)
+						UARTprintf("1000 Hz Current adjusted conductivity reading: %d\n", (int) (Low_Current_alt * 1000000 / Conductivity_reading_low_alt * 1000));
+					UARTprintf("%d Hz Current adjusted conductivity reading: %d\n", COND_FREQ, (int) (Conductivity_reading_low * 1000000 * 1000));
 
-				UARTprintf("\nMid calibrant:\n");
-				UARTprintf("Temperature Corrected conductivity: %d, %d, %d uS/cm * 1000\n", (int) (Mid_Conductivity_cal[0] * 1000), (int) (Mid_Conductivity_cal[1] * 1000), (int) (Mid_Conductivity_cal[2] * 1000));
-				UARTprintf("Average temperature corrected conductivity: %d uS/cm * 1000\n", (int) (Conductivity_mid_cal * 1000));
-				UARTprintf("Average conductivity reading: %d\n", (int) (Conductivity_reading_mid * 1000));
-
-				if(gABoard >= ARV1_0B)
-					UARTprintf("1000 Hz Current adjusted conductivity reading: %d\n", (int) (Mid_Current_alt * 1000000 / Conductivity_reading_mid_alt * 1000));
-				UARTprintf("%d Hz Current adjusted conductivity reading: %d\n", COND_FREQ, (int) (Mid_Current * 1000000 / Conductivity_reading_mid * 1000));
-
-				UARTprintf("\nHigh calibrant:\n");
-				UARTprintf("Temperature Corrected conductivity: %d, %d, %d uS/cm * 1000\n", (int) (High_Conductivity_cal[0] * 1000), (int) (High_Conductivity_cal[1] * 1000), (int) (High_Conductivity_cal[2] * 1000));
-				UARTprintf("Average temperature corrected conductivity: %d uS/cm * 1000\n", (int) (Conductivity_high_cal * 1000));
-				UARTprintf("Average conductivity reading: %d\n", (int) (Conductivity_reading_high * 1000));
-
-				if(gABoard >= ARV1_0B)
-					UARTprintf("1000 Hz Current adjusted conductivity reading: %d\n", (int) (High_Current_alt * 1000000 / Conductivity_reading_high_alt * 1000));
-				UARTprintf("%d Hz Current adjusted conductivity reading: %d\n", COND_FREQ, (int) (High_Current * 1000000 / Conductivity_reading_high * 1000));
-
-				if(gABoard >= ARV1_0B)
-					UARTprintf("\n1000 Hz Factory Conductivity Slope:\t%d\n", (int) (Cond_Slope_alt * 1000));
-				UARTprintf("%d Hz Factory Conductivity Slope:\t%d\n", COND_FREQ, (int) (Cond_Slope * 1000));
-
-				if(Cond_Slope > 0.1 && Cond_Slope < 0.3)
-				{
-					UARTprintf("\nConductivity Factory Cal check passed, saving to memory\n");
-					MemoryWrite(PAGE_FACTORY_CAL, OFFSET_COND_LOW_POINT_CAL, 4, (uint8_t *) &Conductivity_low_cal);
-					MemoryWrite(PAGE_FACTORY_CAL, OFFSET_COND_READ_LOW_POINT, 4, (uint8_t *) &Conductivity_reading_low);
+					UARTprintf("\nMid calibrant:\n");
+					UARTprintf("Temperature Corrected conductivity: %d, %d, %d uS/cm * 1000\n", (int) (Mid_Conductivity_cal[0] * 1000), (int) (Mid_Conductivity_cal[1] * 1000), (int) (Mid_Conductivity_cal[2] * 1000));
+					UARTprintf("Average temperature corrected conductivity: %d uS/cm * 1000\n", (int) (Conductivity_mid_cal * 1000));
+					UARTprintf("Average conductivity reading: %d\n", (int) (Conductivity_reading_mid * 1000));
 
 					if(gABoard >= ARV1_0B)
+						UARTprintf("1000 Hz Current adjusted conductivity reading: %d\n", (int) (Mid_Current_alt * 1000000 / Conductivity_reading_mid_alt * 1000));
+					UARTprintf("%d Hz Current adjusted conductivity reading: %d\n", COND_FREQ, (int) (Mid_Current * 1000000 / Conductivity_reading_mid * 1000));
+
+					UARTprintf("\nHigh calibrant:\n");
+					UARTprintf("Temperature Corrected conductivity: %d, %d, %d uS/cm * 1000\n", (int) (High_Conductivity_cal[0] * 1000), (int) (High_Conductivity_cal[1] * 1000), (int) (High_Conductivity_cal[2] * 1000));
+					UARTprintf("Average temperature corrected conductivity: %d uS/cm * 1000\n", (int) (Conductivity_high_cal * 1000));
+					UARTprintf("Average conductivity reading: %d\n", (int) (Conductivity_reading_high * 1000));
+
+					if(gABoard >= ARV1_0B)
+						UARTprintf("1000 Hz Current adjusted conductivity reading: %d\n", (int) (High_Current_alt * 1000000 / Conductivity_reading_high_alt * 1000));
+					UARTprintf("%d Hz Current adjusted conductivity reading: %d\n", COND_FREQ, (int) (High_Current * 1000000 / Conductivity_reading_high * 1000));
+
+					if(gABoard >= ARV1_0B)
+						UARTprintf("\n1000 Hz Factory Conductivity Slope:\t%d\n", (int) (Cond_Slope_alt * 1000));
+					UARTprintf("%d Hz Factory Conductivity Slope:\t%d\n", COND_FREQ, (int) (Cond_Slope * 1000));
+
+					if(Cond_Slope > 0.1 && Cond_Slope < 0.3)
 					{
-						MemoryWrite(PAGE_FACTORY_CAL, OFFSET_FACTORY_COND_SLOPE, 4, (uint8_t *) &Cond_Slope_alt);	// 1 kHz
-						MemoryWrite(PAGE_FACTORY_CAL, OFFSET_FACTORY_COND_SLOPE_ALT, 4, (uint8_t *) &Cond_Slope);	// 5 kHz
+						UARTprintf("\nConductivity Factory Cal check passed, saving to memory\n");
+						MemoryWrite(PAGE_FACTORY_CAL, OFFSET_COND_LOW_POINT_CAL, 4, (uint8_t *) &Conductivity_low_cal);
+						MemoryWrite(PAGE_FACTORY_CAL, OFFSET_COND_READ_LOW_POINT, 4, (uint8_t *) &Conductivity_reading_low);
+
+						if(gABoard >= ARV1_0B)
+						{
+							MemoryWrite(PAGE_FACTORY_CAL, OFFSET_FACTORY_COND_SLOPE, 4, (uint8_t *) &Cond_Slope_alt);	// 1 kHz
+							MemoryWrite(PAGE_FACTORY_CAL, OFFSET_FACTORY_COND_SLOPE_ALT, 4, (uint8_t *) &Cond_Slope);	// 5 kHz
+						}
+						else
+							MemoryWrite(PAGE_FACTORY_CAL, OFFSET_FACTORY_COND_SLOPE, 4, (uint8_t *) &Cond_Slope);	// 1 kHz
 					}
 					else
-						MemoryWrite(PAGE_FACTORY_CAL, OFFSET_FACTORY_COND_SLOPE, 4, (uint8_t *) &Cond_Slope);	// 1 kHz
-				}
-				else
-				{
-					UARTprintf("Conductivity Factory Cal check failed, NOT saving to memory\n");
-					FactoryCalCheck = 0;
-					CondCheck = 0;
-				}
+					{
+						UARTprintf("Conductivity Factory Cal check failed, NOT saving to memory\n");
+						FactoryCalCheck = 0;
+						CondCheck = 0;
+					}
 
-				// Push air back into cond cal port before moving to next solution
-				if(BUBBLES_IN_TUBE)
-				{
-					RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
-					PumpVolume(BW, PumpVol_tube_bubble, Speed_Fast, 1);
-					userDelay(valve_delay, 1);
+					// Push air back into cond cal port before moving to next solution
+					if(BUBBLES_IN_TUBE)
+					{
+						RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
+						PumpVolume(BW, PumpVol_tube_bubble, Speed_Fast, 1);
+						userDelay(valve_delay, 1);
+					}
 				}
 
 				if(PURGE_SAMPLE)
