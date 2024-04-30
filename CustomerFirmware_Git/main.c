@@ -7860,14 +7860,14 @@ int main(void) {
 			float T_Therm;
 			if(1)	// Isolating the thermistor variables T_Therm_S, T_Therm_F, and Therm_Correction becasue this is the only place they are needed
 			{
-				float T_Therm_S = ReadThermistor();
+				float T_Therm_S = ReadThermistor(THERM_SAMP);
 
 				DEBUG_PRINT(UARTprintf("\nPriming %d uL of sample\n", PumpVol_Sample_Prime);)
 				Sensor_in_rinse = 0;
 				RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
 				PumpVolume(FW, PumpVol_Sample_Prime, Speed_Fast, 1);
 
-				float T_Therm_F = ReadThermistor();
+				float T_Therm_F = ReadThermistor(THERM_SAMP);
 				DEBUG_PRINT(UARTprintf("Therm Start and Final Temps:\t%d\t%d\tC*1000\n", (int) (T_Therm_S * 1000), (int) (T_Therm_F * 1000));)
 
 				float Therm_Correction = Build_float(MemoryRead(PAGE_FACTORY_CAL, OFFSET_THERM_CORRECTION, 4));
@@ -12015,7 +12015,7 @@ int main(void) {
 						MemoryWrite(Test_page, OFFSET_B1_PRIME_COND, 4, (uint8_t *) &Conductivity_B1);
 					}
 					PumpVolume(FW, PumpVol_sample_rinse - (PumpVol_plug + PumpVol_Solution + PumpVol_Rinse), Speed_Fast, 1);
-					float T_Therm_B1 = ReadThermistor();
+					float T_Therm_B1 = ReadThermistor(THERM_SAMP);
 					MemoryWrite(Test_page, OFFSET_B1_THERM_TEMP, 4, (uint8_t *) &T_Therm_B1);
 
 					//
@@ -12400,7 +12400,7 @@ int main(void) {
 					RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
 #endif
 					PumpVolume(FW, PumpVol_sample_rinse - (PumpVol_plug + PumpVol_Solution + PumpVol_Rinse), Speed_Fast, 1);
-					float T_Therm_B2 = ReadThermistor();
+					float T_Therm_B2 = ReadThermistor(THERM_SAMP);
 					MemoryWrite(Test_page, OFFSET_B2_THERM_TEMP, 4, (uint8_t *) &T_Therm_B2);
 					userDelay(valve_delay_after_air, 1);
 
@@ -14811,14 +14811,14 @@ int main(void) {
 				while(GPIOPinRead(GPIO_PORTF_BASE, GPIO_PIN_3) == 0);
 				SetLED(BLUE_BUTTON_BLINK, 0);
 
-				float T_Therm_S = ReadThermistor();
+				float T_Therm_S = ReadThermistor(THERM_SAMP);
 
 				UARTprintf("Priming sample tube... \n");
 				RunValveToPossition_Bidirectional_AbortReady(V_SAMP, VALVE_STEPS_PER_POSITION);
 				PumpVolume(FW, PumpVol_Sample_Prime, Speed_Fast, 1);
 				userDelay(valve_delay, 1);
 
-				float T_Therm_F = ReadThermistor();
+				float T_Therm_F = ReadThermistor(THERM_SAMP);
 				UARTprintf("Therm Start and Final Temps:\t%d\t%d\tC*1000\n", (int) (T_Therm_S * 1000), (int) (T_Therm_F * 1000));
 
 				if(CALIBRATE_THERM)

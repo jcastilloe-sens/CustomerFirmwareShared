@@ -18,6 +18,11 @@
 //#define COND_FREQ	1000
 #define COND_FREQ	(gABoard >= ARV1_0B ? 5000 : 1000)
 
+#ifdef SECOND_THERM
+#define THERM_SAMP	0
+#define THERM_QC	1
+#endif
+
 //// This is the normal configuration
 //// Defines for which sensor is on ADC channels
 //#define ORP_CH		0
@@ -1730,7 +1735,11 @@ extern float ADCReadAvg(uint8_t ui8Channel, int ADC_CS_PIN, int samples);
 
 //extern float StreamADCChannel(uint8_t ui8Channel, int ADC_CS_PIN, int time);
 
+#ifdef SECOND_THERM
+extern void ADCCurrentSet(bool state, uint8_t ADC_CS_B);
+#else
 extern void ADCCurrentSet(bool state);
+#endif
 
 extern void MemoryWrite(unsigned int page, unsigned int byte, unsigned int num_of_bytes, uint8_t *pui8DataTx);
 
@@ -1768,7 +1777,11 @@ extern uint8_t CheckCond(void);
 extern uint8_t CheckCond(uint16_t ui16freq);
 #endif
 
+#ifdef SECOND_THERM
+extern float ReadThermistor(uint8_t ThermID);
+#else
 extern float ReadThermistor(void);
+#endif
 
 extern uint8_t * GetTime(void);
 
