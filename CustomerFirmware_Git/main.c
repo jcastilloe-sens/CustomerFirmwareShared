@@ -573,29 +573,35 @@ static float T_assume = 25;	// Assume all solutions are at room temperature
 //static float Sols->Cal_2_Cond_TComp = 0.0216;
 //static float Cond_TComp_Samp = 0.0198;
 
-//void ClearMemory(void)
-//{
-//	// Write test data to memory right before telling BT test is completed
-//	// Enter Sample Test Data 1
-//	int i;
-//	int k;
-//
-//	uint8_t Current_test = FindTestNumber();
-////	uint8_t Current_cal = FindCalNumber();
-//
-//	uint32_t Clear_Mem = 0xFFFFFFFF;
-//	for(i = 76; i < (Current_test + 1); i++)
-//	{
-//		for(k = 0; k < (32 * PAGES_FOR_TEST); k++)
-//			MemoryWrite((PAGE_TEST + i * PAGES_FOR_TEST) - 3, (k * 4), 4, (uint8_t *) &Clear_Mem);
-//	}
-//
-////	for(i = 1; i < (Current_cal + 1); i++)
-////	{
-////		for(k = 0; k < (32 * PAGES_FOR_CAL); k++)
-////			MemoryWrite(Find_Cal_page(i), (k * 4), 4, (uint8_t *) &Clear_Mem);
-////	}
-//}
+#ifdef TESTING_MODE
+void ClearMemory(void)
+{
+	// Go through all cal and test pages and clear the data
+	int i;
+	int j;
+	uint8_t Clear[128];
+	memset(Clear, 0xFF, 128);
+	for(i = PAGE_CAL; i < 512; i++)
+	{
+		DEBUG_PRINT(UARTprintf("Page: %d\n", i);)
+		for(j = 0; j < 2; j++)
+			MemoryWrite(i, j * 128, 128, Clear);
+	}
+
+	uint8_t Sensor_Usage = 0;
+
+	uint16_t Zero = 0;
+	MemoryWrite(PAGE_CARTRIDGE_INFO, OFFSET_COMPLETED_CALS, 2, (uint8_t *) &Zero);
+	MemoryWrite(PAGE_CARTRIDGE_INFO, OFFSET_COMPLETED_TESTS, 2, (uint8_t *) &Zero);
+
+	MemoryWrite(PAGE_CARTRIDGE_INFO, OFFSET_SENSOR_USAGE, 1, &Sensor_Usage);
+
+	MemoryWrite(PAGE_SOLUTIONS, OFFSET_REPUMP_RINSE, 1, (uint8_t *) &Zero);
+	MemoryWrite(PAGE_SOLUTIONS, OFFSET_REPUMP_CAL_1, 1, (uint8_t *) &Zero);
+	MemoryWrite(PAGE_SOLUTIONS, OFFSET_REPUMP_CAL_2, 1, (uint8_t *) &Zero);
+	MemoryWrite(PAGE_SOLUTIONS, OFFSET_REPUMP_CLEAN, 1, (uint8_t *) &Zero);
+}
+#endif
 
 //void RunAllCondRanges(void)
 //{
@@ -756,18 +762,18 @@ int main(void) {
 
 	if(1)
 	{
-//#ifdef VALVE_STRUCT
-//		DEBUG_PRINT(UARTprintf("Air: %d\n", V_AIR);)
-//		DEBUG_PRINT(UARTprintf("Samp: %d\n", V_SAMP);)
-//		DEBUG_PRINT(UARTprintf("B1: %d\n", V_B1);)
-//		DEBUG_PRINT(UARTprintf("B2: %d\n", V_B2);)
-//		DEBUG_PRINT(UARTprintf("C2: %d\n", V_C2);)
-//		DEBUG_PRINT(UARTprintf("Clean: %d\n", V_CLEAN);)
-//		DEBUG_PRINT(UARTprintf("Cal 5: %d\n", V_CAL_2);)
-//		DEBUG_PRINT(UARTprintf("Cal 6: %d\n", V_CAL_1);)
-//		DEBUG_PRINT(UARTprintf("T1: %d\n", V_T1);)
-//		DEBUG_PRINT(UARTprintf("Rinse: %d\n", V_RINSE);)
-//#endif
+#ifdef VALVE_STRUCT
+		DEBUG_PRINT(UARTprintf("Air: %d\n", V_AIR);)
+		DEBUG_PRINT(UARTprintf("Samp: %d\n", V_SAMP);)
+		DEBUG_PRINT(UARTprintf("B1: %d\n", V_B1);)
+		DEBUG_PRINT(UARTprintf("B2: %d\n", V_B2);)
+		DEBUG_PRINT(UARTprintf("C2: %d\n", V_C2);)
+		DEBUG_PRINT(UARTprintf("Clean: %d\n", V_CLEAN);)
+		DEBUG_PRINT(UARTprintf("Cal 5: %d\n", V_CAL_2);)
+		DEBUG_PRINT(UARTprintf("Cal 6: %d\n", V_CAL_1);)
+		DEBUG_PRINT(UARTprintf("T1: %d\n", V_T1);)
+		DEBUG_PRINT(UARTprintf("Rinse: %d\n", V_RINSE);)
+#endif
 		uint32_t AC;
 		EEPROMRead(&AC, OFFSET_AUTO_CAL, 4);
 		DEBUG_PRINT(UARTprintf("Auto Cal: %d, %d:%d\n", AC & 1, AC >> 8 & 0xFF, AC >> 16 & 0xFF);)
@@ -1403,6 +1409,7 @@ int main(void) {
 							uint8_t check = 1;
 							DEBUG_PRINT(UARTprintf("\n");)
 							DEBUG_PRINT(UARTprintf("Type T to write thermistor slope\n");)
+							DEBUG_PRINT(UARTprintf("Type C to clear memory\n");)
 
 							while(check == 1)
 							{
@@ -1412,12 +1419,31 @@ int main(void) {
 									UARTCharPutNonBlocking(UART0_BASE, UART_Rx); //echo character
 									DEBUG_PRINT(UARTprintf("\n");)
 
-									if(UART_Rx == 'T')	// 0x0D = enter; use hex because UART_Rx is defined as int32_t because thats what UARTCharGet returns
+									if(UART_Rx == 'T' || UART_Rx == 'C' || UART_Rx == 'M')	// 0x0D = enter; use hex because UART_Rx is defined as int32_t because thats what UARTCharGet returns
 									{
-										float Therm_corr = Build_float(MemoryRead(PAGE_FACTORY_CAL, OFFSET_THERM_CORRECTION, 4));
-										DEBUG_PRINT(UARTprintf("Current Therm slope = %d / 1000\n", (int) (Therm_corr * 1000));)
+										uint8_t expected_bytes = 1;
+										if(UART_Rx == 'T')
+										{
+											float Therm_corr = Build_float(MemoryRead(PAGE_FACTORY_CAL, OFFSET_THERM_CORRECTION, 4));
+											DEBUG_PRINT(UARTprintf("Current Therm slope = %d / 1000\n", (int) (Therm_corr * 1000));)
 
-										DEBUG_PRINT(UARTprintf("Type in new slope in the format: '-0.###'\n");)
+											DEBUG_PRINT(UARTprintf("Type in new slope in the format: '-0.###'\n");)
+											expected_bytes = 6;
+										}
+										else if(UART_Rx == 'C')
+										{
+											DEBUG_PRINT(UARTprintf("Are you sure you want to clear the memory? (y)\n");)
+											expected_bytes = 1;
+										}
+										else if(UART_Rx == 'M')
+										{
+											// This is to be a streaming command into memory
+											// First it sends length as 1 byte (in bytes)
+											// Second it sends page as 2 bytes
+											// Third it sends offset as 1 byte
+											expected_bytes = 4;
+										}
+
 										int32_t Therm_Rx[6];
 										while(check == 1)
 										{
@@ -1426,7 +1452,7 @@ int main(void) {
 												UARTCharGetNonBlocking(UART0_BASE);
 
 											uint8_t count = 0;
-											for(count = 0; count < 6; count++)
+											for(count = 0; count < expected_bytes; count++)
 											{
 												Therm_Rx[count] = UARTCharGet(UART0_BASE);
 												UARTCharPutNonBlocking(UART0_BASE, Therm_Rx[count]); //echo character
@@ -1439,16 +1465,64 @@ int main(void) {
 											}
 											UARTprintf("\n");
 
-											// Check that the 4 characters are a number, followed by decimal, followed by two numbers, also check all 4 characters were recevied
-											if(Therm_Rx[0] == '-' && Therm_Rx[1] == '0' && Therm_Rx[2] == '.' && (Therm_Rx[3] >= '0' && Therm_Rx[3] <= '9') && (Therm_Rx[4] >= '0' && Therm_Rx[4] <= '9') && (Therm_Rx[5] >= '0' && Therm_Rx[5] <= '9') && count == 6)
+											if(UART_Rx == 'T')
 											{
-												check = 2;
-												Therm_corr = -(((float) (Therm_Rx[3] - '0')) / 10 + ((float) (Therm_Rx[4] - '0')) / 100 + (((float) Therm_Rx[5] - '0')) / 1000);
-												DEBUG_PRINT(UARTprintf("Saving %d / 1000\n", (int) (Therm_corr * 1000));)
-												MemoryWrite(PAGE_FACTORY_CAL, OFFSET_THERM_CORRECTION, 4, (uint8_t *) &Therm_corr);
+												// Check that the 4 characters are a number, followed by decimal, followed by two numbers, also check all 4 characters were recevied
+												if(Therm_Rx[0] == '-' && Therm_Rx[1] == '0' && Therm_Rx[2] == '.' && (Therm_Rx[3] >= '0' && Therm_Rx[3] <= '9') && (Therm_Rx[4] >= '0' && Therm_Rx[4] <= '9') && (Therm_Rx[5] >= '0' && Therm_Rx[5] <= '9') && count == 6)
+												{
+													check = 2;
+													float Therm_corr = -(((float) (Therm_Rx[3] - '0')) / 10 + ((float) (Therm_Rx[4] - '0')) / 100 + (((float) Therm_Rx[5] - '0')) / 1000);
+													DEBUG_PRINT(UARTprintf("Saving %d / 1000\n", (int) (Therm_corr * 1000));)
+													MemoryWrite(PAGE_FACTORY_CAL, OFFSET_THERM_CORRECTION, 4, (uint8_t *) &Therm_corr);
+												}
+												else
+													UARTprintf("Entered data not in required format, needs to be -0.###! Try again!\n");
 											}
-											else
-												UARTprintf("Entered data not in required format, needs to be -0.###! Try again!\n");
+											else if(UART_Rx == 'C' && Therm_Rx[0] == 'y')
+											{
+												if(POWER_ANALOG_OFF && gBoard >= V6_4 && STORE_AT_POTENTIAL == 0)
+												{
+													InitAnalog();
+												}
+												SetLED(BLUE_BUTTON_BLINK, 1);
+												ClearMemory();
+												DEBUG_PRINT(UARTprintf("Done!\n");)
+												check = 2;
+												SetLED(BLUE_BUTTON_BLINK, 0);
+												AnalogOff();
+											}
+											else if(UART_Rx == 'M')
+											{
+												uint8_t length = Therm_Rx[0];
+												uint16_t page = Therm_Rx[1] | (Therm_Rx[2] << 8);
+												uint8_t offset = Therm_Rx[3];
+
+												uint8_t rxBuffer[128];
+
+												if(POWER_ANALOG_OFF && gBoard >= V6_4 && STORE_AT_POTENTIAL == 0)
+												{
+													InitAnalog();
+												}
+												SetLED(BLUE_BUTTON, 1);
+
+												UARTprintf("Length: %d\n", length);
+												UARTprintf("Page: %d\n", page);
+												UARTprintf("Offset: %d\n", offset);
+												UARTprintf("Ready!\n");
+												// This is where I should save the data
+												uint8_t i;
+												for(i = 0; i < length; i++)
+												{
+													rxBuffer[i] = UARTCharGet(UART0_BASE);
+//													UARTCharPutNonBlocking(UART0_BASE, Rx_Buffer[i]); //echo character
+												}
+
+												MemoryWrite(page, offset, length, rxBuffer);
+
+												SetLED(BLUE_BUTTON, 0);
+												DEBUG_PRINT(UARTprintf("Done!\n");)
+												check = 2;
+											}
 										}
 									}
 									else
