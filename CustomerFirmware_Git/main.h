@@ -44,10 +44,6 @@ extern uint8_t g_next_state;
 //#define gABoard		AV7_3
 
 //static uint8_t FIRMWARE_REVISION[20] =	"v00.22.01-b00.15.00 ";
-<<<<<<< HEAD
 static uint8_t FIRMWARE_REVISION[20] =	"T01.04.02-b01.02.03 ";
-=======
-static uint8_t FIRMWARE_REVISION[20] =	"T01.04.01-b01.02.03 ";
->>>>>>> refs/heads/qc-therm
 
 #endif /* MAIN_H_ */
