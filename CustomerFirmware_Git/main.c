@@ -2021,7 +2021,7 @@ int main(void) {
 			//			// TODO: Set pump variables for Calibration
 			// Variables to control pump and valve
 			uint16_t Number_of_bubbles_Prerinse = 3;// - Rinse_pumped;
-			uint16_t Number_of_bubbles_Cals = 5;
+			uint16_t Number_of_bubbles_Cals = 3;
 //			uint16_t Number_of_bubbles_Cal_2 = 4;
 //			uint16_t Number_of_bubbles_Cal_1 = 4;
 			uint16_t Number_of_bubbles_Postrinse = 2;
