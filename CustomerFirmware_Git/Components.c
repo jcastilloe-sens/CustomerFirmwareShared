@@ -1945,6 +1945,40 @@ float ADCReadAvg(uint8_t ui8Channel, int ADC_CS_PIN, int samples)
 //	return fVoltage;
 //}
 
+#ifdef SECOND_THERM
+//**************************************************************************
+// Function to control current source for temperature sensor outputs 1000 uA
+// Parameters:	state; true - on
+//					   false - off
+//				ADC_CS_B; ADC1_CS_B OR ADC2_CS_B
+//**************************************************************************
+void ADCCurrentSet(bool state, uint8_t ADC_CS_B)
+{
+	while(SSIBusy(SSI1_BASE)){} // Wait for SSI to finish transferring before raising SS pin
+
+	// Set SPI communication to capture on rising edge of clock (DAC captures on falling edge)
+	SSIDisable(SSI1_BASE);
+	SSIConfigSetExpClk(SSI1_BASE, SysCtlClockGet(), SSI_FRF_MOTO_MODE_0, SSI_MODE_MASTER, SPI_CLOCK, 8);
+	SSIEnable(SSI1_BASE);
+
+
+
+	uint8_t ADC_Address = 0x10;		// First byte to send is ADC address
+	uint8_t URA = 0x01;				// Seconds byte is upper register address
+	uint8_t LRA = 0x02;				// Third byte is lower register address and num of bytes
+//	uint8_t Data = 0x0A * state;	// 0x0A Sets 1000 uA Fourth byte is byte to write into register
+	uint8_t Data = 0x01 * state;	// 0x01 sets 100 uA Fourth byte is byte to write into register
+
+	// Set ADC we are using into active mode
+	if(state == 1)
+		SPISend(SSI1_BASE, 1, ADC_CS_B, 0, 4, ADC_Address, 0x00, 0x08, 0x00); // Register 0x08, 0x03 stand-by mode, 0x00 active mode
+
+	SPISend(SSI1_BASE, 1, ADC_CS_B, 0, 4, ADC_Address, URA, LRA, Data); // Write to ADC_AUXCN register
+
+	if(state == 0)
+		SPISend(SSI1_BASE, 1, ADC_CS_B, 0, 4, ADC_Address, 0x00, 0x08, 0x00); // Register 0x08, 0x03 stand-by mode, 0x00 active mode
+}
+#else
 //**************************************************************************
 // Function to control current source for temperature sensor outputs 1000 uA
 // Parameters:	state; true - on
@@ -1977,6 +2011,8 @@ void ADCCurrentSet(bool state)
 	if(state == 0)
 		SPISend(SSI1_BASE, 1, ADC1_CS_B, 0, 4, ADC_Address, 0x00, 0x08, 0x00); // Register 0x08, 0x03 stand-by mode, 0x00 active mode
 }
+#endif
+
 
 //**************************************************************************
 // Function to write to the EEPROM; CAT24C512
@@ -5846,6 +5882,293 @@ uint8_t CheckCond(uint16_t ui16freq)
 }
 #endif
 
+#ifdef SECOND_THERM
+//**************************************************************************
+// Uses ADC 5 to calculate resistance on thermistor and calculate temperature
+// based on that
+// Created 11/2/2020
+// Parameters:	ThermID; THERM_SAMP or THERM_QC
+// Returns:		Temperature
+//**************************************************************************
+float ReadThermistor(uint8_t ThermID)
+{
+	DEBUG_PRINT(
+	if(gDiagnostics >= 1)
+		UARTprintf("Reading thermistor temperature!\n");
+	)
+
+	uint32_t bits07 = 0, bits815 = 0;
+	int16_t Data = 0;
+	uint16_t Non_Zero_counter = 0;	// Count up how many times ADC returns something besides 0 to make sure its working
+
+	while(SSIBusy(SSI1_BASE)){} // Wait for SSI to finish transferring before raising SS pin
+
+	if(ThermID == THERM_QC)
+		ADCCurrentSet(1, ADC2_CS_B);
+	else
+		ADCCurrentSet(1, ADC1_CS_B);
+
+	// Set SPI communication to mode 1 for ADC5, capturing on the falling edge
+	SSIDisable(SSI1_BASE);
+	SSIConfigSetExpClk(SSI1_BASE, SysCtlClockGet(), SSI_FRF_MOTO_MODE_1, SSI_MODE_MASTER, SPI_CLOCK, 8);
+	SSIEnable(SSI1_BASE);
+
+	SPISend(SSI1_BASE, 2, ADC5_CS_B, 0, 1, 0x02);	// Send wakeup command to ADC
+
+	//
+	// After waking ADC setup input channel to COND_AC_DRV, and set data rate
+	//
+	uint32_t InMux_Rx = 0, DataRate_Rx = 0;
+	uint8_t counter = 0;
+	uint8_t InMux_Tx = 0x5C; // // Set positive input to AIN 5 (0011 = 0x5) (THERMISTOR), negative input to AINCOM (1100 = 0xC) (GND)
+	if(gABoard < AV7_2 && ThermID == THERM_SAMP)
+		InMux_Tx = 0x3C;
+	else if(ThermID == THERM_QC)	// For prototyping purposes attached the QC thermistor to Turb Detect 90A input
+		InMux_Tx = 0x1C;
+
+	uint8_t DataRate_Tx = 0x1E;	// Set low latency filter 0x10, Set 2000 SPS data rate 0x0C, 4000 SPS data rate 0x0E
+
+	while((InMux_Rx != InMux_Tx || DataRate_Rx != DataRate_Tx) && counter <= 10)
+	{
+		// Write register 010r rrrr
+		// Read register 001r rrrr
+
+		// Input Multiplexer register 0x02, write = 0x42, read = 0x22
+		SPISend(SSI1_BASE, 2, ADC5_CS_B, 0, 3, 0x42, 0x00, InMux_Tx);	// Set positive and negative inputs
+		SPISend(SSI1_BASE, 2, ADC5_CS_B, 0, 3, 0x22, 0x00, 0x00);	// Read back positive and negative inputs
+
+		SSIDataGet(SSI1_BASE, &InMux_Rx);
+		SSIDataGet(SSI1_BASE, &InMux_Rx);
+		SSIDataGet(SSI1_BASE, &InMux_Rx);
+
+		//		UARTprintf("Input mux = %x\n", InMux_Rx);
+
+		// Data rate register 0x04, write = 0x44, read = 0x24
+		SPISend(SSI1_BASE, 2, ADC5_CS_B, 0, 3, 0x44, 0x00, DataRate_Tx);	// Set low latency filter 0x10, Set 2000 SPS data rate 0x0C, 4000 SPS data rate 0x0E
+		SPISend(SSI1_BASE, 2, ADC5_CS_B, 0, 3, 0x24, 0x00, 0x00);	// Read back data rate register
+
+		SSIDataGet(SSI1_BASE, &DataRate_Rx);
+		SSIDataGet(SSI1_BASE, &DataRate_Rx);
+		SSIDataGet(SSI1_BASE, &DataRate_Rx);
+
+		//		UARTprintf("Data rate = %x\n", DataRate_Rx);
+
+		if(counter < 5)
+			counter++;
+		else if(counter == 5 && (InMux_Rx != InMux_Tx || DataRate_Rx != DataRate_Tx))
+		{
+			counter++;
+
+			DEBUG_PRINT(
+			UARTprintf("Tried writing ADC 5 registers 5 times, not writing!\n");
+			if(gABoard >= AV7_2)
+				UARTprintf("InMux Rx = %x, should be 0x5c\n");
+			else
+				UARTprintf("InMux Rx = %x, should be 0x3c\n");
+			UARTprintf("Data rate Rx = %x, should be 0x1c\n");
+			UARTprintf("Resetting analog board!\n");
+			)
+
+			AnalogOff();
+
+			userDelay(1000, 1);
+
+#ifdef MCU_ZXR
+			GPIOPinWrite(IO_RESET_ANALOG_BASE, IO_RESET_ANALOG_PIN, IO_RESET_ANALOG_PIN); // Analog Reset Set high for normal operation
+
+			// Set pin low, turn on analog board, then set high
+			GPIOPinWrite(IO_COND_ADC_CNV_BASE, IO_COND_ADC_CNV_PIN, 0x00); // Conductivity ADC CNV Pin _B
+			GPIOPinWrite(IO_ANALOG_ON_BASE, IO_ANALOG_ON_PIN, IO_ANALOG_ON_PIN); // Analog On
+
+			SysCtlDelay(SysCtlClockGet()/3000 * 7);	// Wait 7 ms after powering up analog board, this is ADCs startup time which is slowest component
+
+			// Need to set conductivity ADC pin high after powering on analog board so it sees rising edge
+			if(gABoard >= AV6_1)
+				GPIOPinWrite(IO_COND_ADC_CNV_BASE, IO_COND_ADC_CNV_PIN, IO_COND_ADC_CNV_PIN); // Conductivity ADC CNV Pin
+			else
+				GPIOPinWrite(IO_COND_ADC_CNV_BASE, IO_COND_ADC_CNV_PIN, 0x00); // Conductivity ADC CNV Pin
+
+			// Toggle Reset Pin
+			GPIOPinWrite(IO_RESET_ANALOG_BASE, IO_RESET_ANALOG_PIN, 0); // Reset is active low, send pulse at startup to reset IO extenders and DAC
+			SysCtlDelay(SysCtlClockGet()/3000);	// Delay 1ms
+			GPIOPinWrite(IO_RESET_ANALOG_BASE, IO_RESET_ANALOG_PIN, IO_RESET_ANALOG_PIN); // Set high for normal operation
+			SysCtlDelay(SysCtlClockGet()/3000);	// Delay 1ms
+
+			if(gBoard == V6_2 || gBoard == V6_3)
+			{
+				// Raise extender reset line to activate device, specs say device active after reset = 0 ns @ 5V
+				GPIOPinWrite(IO_LED_EXT_CS_B_BASE, IO_LED_EXT_CS_B_PIN, IO_LED_EXT_CS_B_PIN); // LED Ext CS _B	// Make sure CS_B is high, will only be low if resetting analog board on V6_2 and V6_3
+				GPIOPinWrite(IO_LED_EXT_RST_B_BASE, IO_LED_EXT_RST_B_PIN, IO_LED_EXT_RST_B_PIN); // LED Ext RST _B
+			}
+#else
+			GPIOPinWrite(GPIO_PORTD_BASE, GPIO_PIN_7, GPIO_PIN_7); // Analog Reset Set high for normal operation
+
+			// Set pin low, turn on analog board, then set high
+			GPIOPinWrite(GPIO_PORTD_BASE, GPIO_PIN_2, 0x00); // Conductivity ADC CNV Pin _B
+			GPIOPinWrite(GPIO_PORTD_BASE, GPIO_PIN_6, GPIO_PIN_6); // Analog On
+
+			SysCtlDelay(SysCtlClockGet()/3000 * 7);	// Wait 7 ms after powering up analog board, this is ADCs startup time which is slowest component
+
+			// Need to set conductivity ADC pin high after powering on analog board so it sees rising edge
+			if(gABoard >= AV6_1)
+				GPIOPinWrite(GPIO_PORTD_BASE, GPIO_PIN_2, GPIO_PIN_2); // Conductivity ADC CNV Pin
+			else
+				GPIOPinWrite(GPIO_PORTD_BASE, GPIO_PIN_2, 0x00); // Conductivity ADC CNV Pin
+
+			// Toggle Reset Pin
+			GPIOPinWrite(GPIO_PORTD_BASE, GPIO_PIN_7, 0); // Reset is active low, send pulse at startup to reset IO extenders and DAC
+			SysCtlDelay(SysCtlClockGet()/3000);	// Delay 1ms
+			GPIOPinWrite(GPIO_PORTD_BASE, GPIO_PIN_7, GPIO_PIN_7); // Set high for normal operation
+			SysCtlDelay(SysCtlClockGet()/3000);	// Delay 1ms
+
+			if(gBoard == V6_2 || gBoard == V6_3)
+			{
+				// Raise extender reset line to activate device, specs say device active after reset = 0 ns @ 5V
+				GPIOPinWrite(GPIO_PORTD_BASE, GPIO_PIN_1, GPIO_PIN_1); // LED Ext CS _B	// Make sure CS_B is high, will only be low if resetting analog board on V6_2 and V6_3
+				GPIOPinWrite(GPIO_PORTD_BASE, GPIO_PIN_0, GPIO_PIN_0); // LED Ext RST _B
+			}
+#endif
+
+
+			InitIO_Ext();		// Sets up IO Extenders and sets initial values
+
+			if(gBoard == V6_2 || gBoard == V6_3)
+				InitLED_Ext();
+			else
+				SetLED(0, 1);
+
+			InitDAC();			// Resets device and writes configuration register
+
+			// Set SPI communication to mode 1 for ADC5, capturing on the falling edge
+			SSIDisable(SSI1_BASE);
+			SSIConfigSetExpClk(SSI1_BASE, SysCtlClockGet(), SSI_FRF_MOTO_MODE_1, SSI_MODE_MASTER, SPI_CLOCK, 8);
+			SSIEnable(SSI1_BASE);
+		}
+		else if(counter < 10)
+			counter++;
+		else if(counter == 10 && (InMux_Rx != InMux_Tx || DataRate_Rx != DataRate_Tx))
+		{
+			DEBUG_PRINT(UARTprintf("ADC5 failed to initialize input mux or data rate!\nUpdating error and moving on!\n");)
+			counter++;
+			gui32Error |= ADC5_FAIL;
+			update_Error();
+		}
+	}
+
+	//
+	// Once ADC is setup, do the actual measurement
+	//
+	uint8_t attempts = 0;
+	float Voltage = 0;
+	uint16_t cycles = 2000;
+
+	while(Non_Zero_counter < (cycles/2) && attempts < 3)
+	{
+		while(SSIDataGetNonBlocking(SSI1_BASE, &bits07)); // Clear FIFO
+
+		IO_Ext_Set(IO_EXT2_ADDR, 2, ADC5_CS_B, 0);	// Set CS_B low while sending/receiving data from ADC5
+		IO_Ext_Set(IO_EXT2_ADDR, 2, ADC5_START, 1);
+
+		SysCtlDelay(SysCtlClockGet()/3000);	// Wait 1 ms after raising start pin
+
+		g_TimerPeriodicInterruptFlag = 0;
+		TimerLoadSet(TIMER1_BASE, TIMER_A, 6250); // Set periodic timer
+		TimerEnable(TIMER1_BASE, TIMER_A);
+
+		uint16_t i;
+		Voltage = 0;
+		for(i = 0; i < (cycles + 1); i++)
+		{
+			//					while(g_TimerPeriodicInterruptFlag == 0);
+			while(g_TimerPeriodicInterruptFlag == 0)
+			{
+				// Poll if BT wants to use I2C, if it does reconnect memory and leave it connected, this will make the signal more noisy during this read but
+				// it will prevent the BT from reading incorrect data into the app, TODO: Redesign app to wait for data rather than write read move on
+#ifdef MCU_ZXR
+				if(GPIOPinRead(IO_I2C_USED_BY_BT_BASE, IO_I2C_USED_BY_BT_PIN) == IO_I2C_USED_BY_BT_PIN && gui8MemConnected == 0)
+					ConnectMemory(1);
+#else
+				if(GPIOPinRead(GPIO_PORTA_BASE, GPIO_PIN_6) == GPIO_PIN_6 && gui8MemConnected == 0)
+					ConnectMemory(1);
+#endif
+
+			}
+			g_TimerPeriodicInterruptFlag = 0;
+
+			SSIDataPut(SSI1_BASE, 0x12); // Send read data command
+			while(SSIBusy(SSI1_BASE)){} // Wait for SSI to finish transferring before raising SS pin
+			SSIDataGet(SSI1_BASE, &bits07);
+
+			SSIDataPut(SSI1_BASE, 0x00); // Send read data command
+			while(SSIBusy(SSI1_BASE)){} // Wait for SSI to finish transferring before raising SS pin
+			SSIDataPut(SSI1_BASE, 0x00); // Send read data command
+			while(SSIBusy(SSI1_BASE)){} // Wait for SSI to finish transferring before raising SS pin
+
+			SSIDataGet(SSI1_BASE, &bits815);
+			SSIDataGet(SSI1_BASE, &bits07);
+
+			Data = bits07 | (bits815 << 8);
+			Voltage += ((Data * 3000.0 / 65536.0)) * 2;
+			if(Data != 0)
+				Non_Zero_counter++;
+		}
+
+		TimerDisable(TIMER1_BASE, TIMER_A);
+		g_TimerPeriodicInterruptFlag = 0;
+
+		Voltage /= cycles;	// Find average voltage by dividing by number of cycles
+
+		IO_Ext_Set(IO_EXT2_ADDR, 2, ADC5_START, 0);
+		IO_Ext_Set(IO_EXT2_ADDR, 2, ADC5_CS_B, 1);	// Set CS_B high after completion
+
+		SPISend(SSI1_BASE, 2, ADC5_CS_B, 0, 1, 0x04);	// Send power-down command to ADC
+
+		if(Non_Zero_counter < (cycles / 2))
+		{
+			DEBUG_PRINT(
+			UARTprintf("Thermistor ADC returned 0s!\n");
+			UARTprintf("Resetting Analog Board!\n");
+			)
+
+			AnalogOff();
+
+			SysCtlDelay(SysCtlClockGet()/3);	// Wait to give analog board time to power-down before turning back on
+
+			InitAnalog();
+		}
+	}
+
+	if(ThermID == THERM_QC)
+		ADCCurrentSet(0, ADC2_CS_B);
+	else
+		ADCCurrentSet(0, ADC1_CS_B);
+
+	if(Non_Zero_counter < (cycles/2) && attempts >= 3)
+	{
+		gui32Error |= ADC5_FAIL;
+		update_Error();
+		DEBUG_PRINT(UARTprintf("Thermistor ADC always read 0's, updating error!\n");)
+	}
+
+//	EEPROMProgram((uint32_t *) &Therm_I, OFFSET_THERM_CURRENT, 4);
+	float Therm_I = 100e-6;
+	EEPROMRead((uint32_t *) &Therm_I, OFFSET_THERM_CURRENT, 4);
+	if(Therm_I != Therm_I)
+		Therm_I = 100e-6;
+
+//	UARTprintf("Average Voltage: %d\n", (int) (Voltage));
+	float Resistance = (Voltage / 1000) / Therm_I;	// Resistance in Ohms
+	float R25 = 10000;	// Resistance of thermistor at 25C
+	float Temp = 1/(3.3540154e-3 + 2.5627725e-4 * log(Resistance/R25) + 2.0829210e-6 * pow(log(Resistance/R25), 2) + 7.3003206e-8 * pow(log(Resistance/R25), 3)) - 273.15;
+
+	if(Temp < 2 || Temp > 50)
+	{
+		DEBUG_PRINT(UARTprintf("Thermistor reading seems wrong!\n");)
+		gui32Error |= THERMISTOR_FAILED;
+	}
+	return Temp;
+}
+#else
 //**************************************************************************
 // Uses ADC 5 to calculate resistance on thermistor and calculate temperature
 // based on that
@@ -5891,8 +6214,8 @@ float ReadThermistor(void)
 		// Read register 001r rrrr
 
 		// Input Multiplexer register 0x02, write = 0x42, read = 0x22
-		SPISend(SSI1_BASE, 2, ADC5_CS_B, 0, 3, 0x42, 0x00, InMux_Tx);	// Set positive input to AIN 4 (0100 = 0x4) (COND ADC DR), negative input to AINCOM (1100 = 0xC) (GND)
-		SPISend(SSI1_BASE, 2, ADC5_CS_B, 0, 3, 0x22, 0x00, 0x00);	// Set positive input to AIN 4 (0100 = 0x4) (COND ADC DR), negative input to AINCOM (1100 = 0xC) (GND)
+		SPISend(SSI1_BASE, 2, ADC5_CS_B, 0, 3, 0x42, 0x00, InMux_Tx);	// Set positive and negative inputs
+		SPISend(SSI1_BASE, 2, ADC5_CS_B, 0, 3, 0x22, 0x00, 0x00);	// Read back positive and negative inputs
 
 		SSIDataGet(SSI1_BASE, &InMux_Rx);
 		SSIDataGet(SSI1_BASE, &InMux_Rx);
@@ -6121,6 +6444,7 @@ float ReadThermistor(void)
 	}
 	return Temp;
 }
+#endif
 
 //**************************************************************************
 // Reads current time directly from RTC and prints it over UART

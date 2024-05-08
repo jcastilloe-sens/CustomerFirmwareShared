@@ -2493,24 +2493,24 @@ void CalibrateTemperature(void)
 		DEBUG_PRINT(UARTprintf("Calibrating Temperature at %d Ohms!\n", (int) (R_known));)
 
 		float Resistance;
-		if(gABoard < AV6)
-		{
-			ADCCurrentSet(1);
-			SysCtlDelay(SysCtlClockGet());	// Delay # of seconds
-
-			Resistance = ADCReadAvg(TEMP_CH, TEMP_ADC, 5);	// Ohms = V mV / 1 mA
-
-			ADCCurrentSet(0);
-		}
-		else
-		{
+//		if(gABoard < AV6)
+//		{
+//			ADCCurrentSet(1);
+//			SysCtlDelay(SysCtlClockGet());	// Delay # of seconds
+//
+//			Resistance = ADCReadAvg(TEMP_CH, TEMP_ADC, 5);	// Ohms = V mV / 1 mA
+//
+//			ADCCurrentSet(0);
+//		}
+//		else
+//		{
 			DACVoltageSet(4, 1500, true);
 			SysCtlDelay(SysCtlClockGet()/3);
 
 			Resistance = ADCReadAvg(TEMP_CH, TEMP_ADC, 5) - ADCReadAvg(TEMP_CH_2, TEMP_ADC, 5);
 
 			DACVoltageSet(4, 3000, true);
-		}
+//		}
 
 		float Current_Coefficient = R_known / Resistance;
 		DEBUG_PRINT(UARTprintf("Coefficient found: %d / 1000\n", (int) (Current_Coefficient * 1000));)
@@ -2554,24 +2554,24 @@ float MeasureTemperature(int seconds)
 		if(Current_Coefficient != Current_Coefficient)
 			Current_Coefficient = 1;
 
-		if(gABoard < AV6)
-		{
-			ADCCurrentSet(1);
-			SysCtlDelay(1 + SysCtlClockGet()/3 * seconds);	// Delay # of seconds
-
-			Resistance = ADCReadAvg(TEMP_CH, TEMP_ADC, 5);	// Ohms = V mV / 1 mA
-
-			ADCCurrentSet(0);
-		}
-		else
-		{
+//		if(gABoard < AV6)
+//		{
+//			ADCCurrentSet(1);
+//			SysCtlDelay(1 + SysCtlClockGet()/3 * seconds);	// Delay # of seconds
+//
+//			Resistance = ADCReadAvg(TEMP_CH, TEMP_ADC, 5);	// Ohms = V mV / 1 mA
+//
+//			ADCCurrentSet(0);
+//		}
+//		else
+//		{
 			DACVoltageSet(4, 1500, true);
 			SysCtlDelay(1 + SysCtlClockGet()/3 * seconds);
 
 			Resistance = (ADCReadAvg(TEMP_CH_2, TEMP_ADC, 5) - ADCReadAvg(TEMP_CH, TEMP_ADC, 5)) * Current_Coefficient;
 
 			DACVoltageSet(4, 3000, true);
-		}
+//		}
 
 		pui8TempCoefficients = MemoryRead(PAGE_FACTORY_CAL, OFFSET_TEMP_COEFFICIENT_A, 12);
 		A = Build_float(pui8TempCoefficients);
